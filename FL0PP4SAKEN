@@ -910,52 +910,85 @@ local function JHB_IsInside(killerHRP)
         and math.abs(localPos.Z) <= halfD
 end
 
-local function JHB_UpdateVisual(killer, killerHRP)
-    if not JHB.ShowVisual or not killerHRP then
-        local p = JHB._parts[killer]
-        if p and p.Parent then p:Destroy() end
-        JHB._parts[killer] = nil
-        return
-    end
-    local p = JHB._parts[killer]
-    if not p or not p.Parent then
-        p = Instance.new("Part")
-        p.Name        = "JHB_HitboxVisual"
-        p.Anchored    = false
-        p.CanCollide  = false
-        p.CanTouch    = false
-        p.CanQuery    = false
-        p.CastShadow  = false
-        p.Material    = JHB.GlowMode and Enum.Material.ForceField or Enum.Material.SmoothPlastic
-        p.Color       = JHB.Color
-        p.Parent      = workspace
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0  = killerHRP
-        weld.Part1  = p
-        weld.Parent = p
-        -- SelectionBox outline
-        local sb = Instance.new("SelectionBox")
-        sb.Adornee          = p
-        sb.Color3           = JHB.Color
-        sb.LineThickness    = 0.04
-        sb.Transparency     = 0.1
-        sb.Visible          = true
-        sb.Parent           = p
-        JHB._parts[killer] = p
-    end
-    p.Size          = Vector3.new(JHB.Width, JHB.Height, JHB.Depth)
-    p.Transparency  = JHB.Transparency
-    p.Color         = JHB.Color
-    p.Material      = JHB.GlowMode and Enum.Material.ForceField or Enum.Material.SmoothPlastic
-    local offset = -(JHB.Depth / 2) - JHB.Distance
-    p.CFrame     = killerHRP.CFrame * CFrame.new(0, 0, offset)
-end
-
 local function JHB_Cleanup(killer)
     local p = JHB._parts[killer]
     if p and p.Parent then p:Destroy() end
     JHB._parts[killer] = nil
 end
+
+local function JHB_CleanupAll()
+    for killer in pairs(JHB._parts) do JHB_Cleanup(killer) end
+end
+
+-- Standalone RenderStepped loop — runs regardless of when killers joined,
+-- finds all killers in workspace every frame and maintains one Part per killer.
+RunService.RenderStepped:Connect(function()
+    if not JHB.Enabled or not JHB.ShowVisual then
+        JHB_CleanupAll()
+        return
+    end
+
+    -- collect active killers from workspace
+    local activeKillers = {}
+    local killersFolder = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild("Killers")
+    if killersFolder then
+        for _, m in ipairs(killersFolder:GetChildren()) do
+            if m:IsA("Model") then
+                activeKillers[m] = true
+            end
+        end
+    end
+
+    -- clean up parts for killers that left
+    for killer in pairs(JHB._parts) do
+        if not activeKillers[killer] then JHB_Cleanup(killer) end
+    end
+
+    -- update/create for active killers
+    for killer in pairs(activeKillers) do
+        local killerHRP = killer:FindFirstChild("HumanoidRootPart")
+        if not killerHRP then JHB_Cleanup(killer); continue end
+
+        local offset = -(JHB.Depth / 2) - JHB.Distance
+        local targetCF = killerHRP.CFrame * CFrame.new(0, 0, offset)
+        local size     = Vector3.new(JHB.Width, JHB.Height, JHB.Depth)
+
+        local p = JHB._parts[killer]
+        if not p or not p.Parent then
+            -- create fresh anchored part — anchored = true so we set CFrame directly each frame
+            p = Instance.new("Part")
+            p.Name         = "JHB_HitboxVisual"
+            p.Anchored     = true
+            p.CanCollide   = false
+            p.CanTouch     = false
+            p.CanQuery     = false
+            p.CastShadow   = false
+            p.Size         = size
+            p.Color        = JHB.Color
+            p.Transparency = JHB.Transparency
+            p.Material     = JHB.GlowMode and Enum.Material.ForceField or Enum.Material.SmoothPlastic
+            p.CFrame       = targetCF
+            p.Parent       = workspace
+            local sb = Instance.new("SelectionBox")
+            sb.Adornee       = p
+            sb.Color3        = JHB.Color
+            sb.LineThickness = 0.04
+            sb.Transparency  = 0.1
+            sb.Visible       = true
+            sb.Parent        = p
+            JHB._parts[killer] = p
+        end
+
+        -- update every frame so it tracks the killer exactly
+        p.Size         = size
+        p.Color        = JHB.Color
+        p.Transparency = JHB.Transparency
+        p.Material     = JHB.GlowMode and Enum.Material.ForceField or Enum.Material.SmoothPlastic
+        p.CFrame       = targetCF
+        local sb = p:FindFirstChildOfClass("SelectionBox")
+        if sb then sb.Color3 = JHB.Color end
+    end
+end)
 
 -- VC (Facing Vision Cone) state is declared here so that VC_IsPlayerInCone,
 -- which lives inside the auto-block do-block below, can reference it.
@@ -1207,18 +1240,6 @@ local function WatchKiller(Killer)
         -- Late QueryHitbox swap
         if Descendant.Name == "QueryHitbox" and Descendant:IsA("BasePart") then
             QueryHitbox = Descendant
-        end
-    end))
-
-    -- JHB visual: update box position each heartbeat, clean up on removal
-    local killerHRP = Killer:FindFirstChild("HumanoidRootPart")
-    table.insert(Connections, RunService.Heartbeat:Connect(function()
-        if JHB.Enabled and JHB.ShowVisual then
-            killerHRP = killerHRP and killerHRP.Parent and killerHRP
-                or Killer:FindFirstChild("HumanoidRootPart")
-            if killerHRP then JHB_UpdateVisual(Killer, killerHRP) end
-        else
-            JHB_Cleanup(Killer)
         end
     end))
 
@@ -5113,16 +5134,12 @@ end)
 AddSection(TabAutoBlock, "Positional Hitbox Gate")
 AddToggle(TabAutoBlock, "JHB_Enabled", "Enable Hitbox Gate", false, function(v)
     JHB.Enabled = v
-    if not v then
-        for killer in pairs(JHB._parts) do JHB_Cleanup(killer) end
-    end
+    if not v then JHB_CleanupAll() end
     Notify("Hitbox Gate", v and "Active — block only fires inside hitbox" or "Disabled", 3)
 end)
 AddToggle(TabAutoBlock, "JHB_ShowVisual", "Show Hitbox Visual", true, function(v)
     JHB.ShowVisual = v
-    if not v then
-        for killer in pairs(JHB._parts) do JHB_Cleanup(killer) end
-    end
+    if not v then JHB_CleanupAll() end
 end)
 AddToggle(TabAutoBlock, "JHB_GlowMode", "Glow (ForceField) Material", true, function(v)
     JHB.GlowMode = v
