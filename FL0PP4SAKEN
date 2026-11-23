@@ -1006,24 +1006,20 @@ VC.heartbeat = nil
 
 local VisualCheckBeam, HitboxFolder, SetAutoBlock, UpdateDiamondZoneVisibility -- UpdateDiamondZoneVisibility is a no-op stub
 do
-local AttackSounds = IdSet({
-    "100600301396617","101199185291628","101553872555606","101698569375359","104910828105172","105204810054381","105207247877248","105516183226360","105840448036441","106836941416453",
-    "107345261604889","107401225947000","108360420637223","108610718831698","108651070773439","108907358619313","109348678063422","109570290393196","111295935549452","112809109188560",
-    "113413858159336","114481520550129","115026634746636","115343460993527","115678417928765","116468089135195","116581754553533","117173212095661","117231507259853","118562842802948",
-    "119583605486352","119664480754070","119942598489800","120749612844426","121853342688333","121954639447247","12222208","12222216","122398404613193","123835423223220",
-    "123923371062204","124234993291213","124903763333174","125213046326879","126469686116453","127557531826290","128195973631079","128367348686124","128856426573270","131123355704017",
-    "132160759837000","132581672170205","133709029886490","134720314512566","135256560060972","135319730390518","136323728355613","137809737339569","138047522440301","139996647355899",
-    "140242176732868","18511965048","70626755789950","70739368096233","71805956520207","72085713525541","73662192846371","74809026448465","74842815979546","75330693422988",
-    "77649238882198","79391273191671","79612713897495","79980897195554","80516583309685","82221759983649","82843272472677","84307400688050","85853080745515","86174610237192",
-    "86506028049034","88589682639517","89004992452376","92869747208256","93299090238530","94273783714662","94317217837143","94632255644411","95079963655241","95863147467940",
-    "96117920303138","96594507550917","98111231282218","98675142200448","98733709078792","98742773509325","98866992038428","99215225043220","99856718263455","99918466107008"})
-local AttackAnimations = IdSet({"87259391926321","140703210927645","136007065400978","129843313690921","86709774283672","108807732150251","138040001965654","86096387000557","96959123077498","72722244508749","100725497418533","89448354637442","114159864966636","128647082364719","111415926592375","144729402831182","149382754027381","152406193748293","155783209463712","158934728164927","161204837592841","164527384912036","167849203748192","170284936182745","173562849103728","176849203718492","179284736192845","182563748192037","185849273618492","188284736192845","191562849103728","137294836274819","139572948362741","142851739482716","146129483729104","149407362817394","152685274910382","155963182749103","159241073628471","162518947361928","165796836274819","169074729103728","172352618294736","175630507382641","178908396471532","182186285362741","185464174273819","188742063182736","192019952091647","195297840982736","198575729873641","102228729296384","140242176732868","112809109188560","136323728355613","115026634746636","84116622032112","108907358619313","127793641088496","86174610237192","95079963655241","101199185291628","119942598489800","84307400688050","113037804008732","105200830849301","75330693422988","82221759983649","81702359653578","108610718831698","112395455254818","109431876587852","109348678063422","85853080745515","98733709078792","105840448036441","114742322778642","105415540898010","106300477136129","80516583309685","116581754553533","71834552297085","119583605486352","117173212095661","104910828105172","79980897195554","116527305931161","131406927389838","94317217837143","121954639447247","128856426573270","131123355704017","107444859834748","133709029886490","183948573829104","184857362910485","185766251091826","186675140182207","187584039273648","188492928364089","189401817455420","190310706546861","191219595638202","192128484729543",
-"106538427162796","126830014841198","123172382755876","88451353906104","129260077168659","110153465553223","122709416391891","87989533095285","135853087227453","105458270463374",
-"116618003477002","83829782357897","93366464803829","92567970681901","84549159308650","77375846492436","128557115409603","80398233021916","125403313786645","105249651793722",
-"92231737384093","109667959938617","82259780706234","106860049270347","130958529065375","120950360130737","109572851772132","108196996477620","129921445546291","74707328554358",
-"80640560792047","103806241180745","139113610178750","129638875679599","106774825859733","106427068964975","70948173568515","121293883585738","127245564598429","90620531468240",
-"114506382930939","126171487400618","124705663396411","99829427721752","129405885079224","93069721274110","88970503168421","138938529389204","81299297965542","118298475669935",
-"120112897026015","124269076578545","111985378056728"})
+-- animation-only trigger — sound hook removed
+local AttackAnimations = IdSet({
+    "106538427162796","126830014841198","123172382755876","88451353906104","129260077168659",
+    "110153465553223","122709416391891","87989533095285","135853087227453","105458270463374",
+    "116618003477002","83829782357897","93366464803829","92567970681901","84549159308650",
+    "77375846492436","128557115409603","80398233021916","125403313786645","105249651793722",
+    "92231737384093","109667959938617","82259780706234","106860049270347","130958529065375",
+    "120950360130737","109572851772132","108196996477620","129921445546291","74707328554358",
+    "80640560792047","103806241180745","139113610178750","129638875679599","106774825859733",
+    "106427068964975","70948173568515","121293883585738","127245564598429","90620531468240",
+    "114506382930939","126171487400618","124705663396411","99829427721752","129405885079224",
+    "93069721274110","88970503168421","138938529389204","81299297965542","118298475669935",
+    "120112897026015","124269076578545","111985378056728",
+})
 local PunchAnimations = IdSet({"87259391926321","140703210927645","136007065400978","129843313690921","86709774283672","108807732150251","138040001965654","86096387000557","144729402831182","149382754027381","152406193748293","155783209463712"})
 
 local LastBlock = 0
@@ -1126,6 +1122,11 @@ HitboxFolder = Instance.new("Folder"); HitboxFolder.Name = "FlexSakenHitboxes"; 
 local CustomHitboxSize   = Vector3.new(5.2, 6, 5.65)
 local CustomHitboxOffset = CFrame.new(0, 0, -3.5)
 
+-- cached once, reused every poll — avoids per-call allocation
+local _HitParams = OverlapParams.new()
+_HitParams.MaxParts           = 1
+_HitParams.BruteForceAllSlow  = true
+
 local function GetLocalQueryHitbox()
     if not LocalCharacter then return nil end
     return LocalCharacter:FindFirstChild("QueryHitbox")
@@ -1163,19 +1164,21 @@ local function TriggerBlockWithHitbox(Killer, QueryHitbox)
         if not killerHRP or not JHB_IsInside(killerHRP) then return end
     end
     local LocalQuery = GetLocalQueryHitbox(); if not LocalQuery then return end
-    local Params = OverlapParams.new(); Params.MaxParts = 1; Params.BruteForceAllSlow = true; Params.IncludeInstances = { LocalQuery }
-    for i = 1, 10 do
+    _HitParams.FilterType                  = Enum.RaycastFilterType.Include
+    _HitParams.FilterDescendantsInstances  = { LocalQuery }
+    local boxSize = CustomHitboxSize * 2.2
+    -- poll every rendered frame instead of every 20 ms — fires as early as possible
+    for i = 1, 25 do
         if not State.AutoBlock or not QueryHitbox.Parent then break end
         if not VC_IsPlayerInCone(Killer) then break end
-        -- Re-check JHB each iteration
         if JHB.Enabled then
             local killerHRP = Killer and Killer:FindFirstChild("HumanoidRootPart")
             if not killerHRP or not JHB_IsInside(killerHRP) then break end
         end
-        local boxCFrame = QueryHitbox.CFrame * CustomHitboxOffset; local boxSize = CustomHitboxSize * 2.2
-        local Hit = workspace:GetPartBoundsInBox(boxCFrame, boxSize, Params)
+        local boxCFrame = QueryHitbox.CFrame * CustomHitboxOffset
+        local Hit = workspace:GetPartBoundsInBox(boxCFrame, boxSize, _HitParams)
         if #Hit > 0 then DoBlock(QueryHitbox); break end
-        task.wait(0.02)
+        RunService.RenderStepped:Wait()
     end
 end
 
@@ -1195,19 +1198,20 @@ local function WatchKiller(Killer)
     -- If still nil the killer has no hitbox (lobby model etc.) — bail cleanly
     if not QueryHitbox then BlockWatchers[Killer] = nil; return end
 
-    local Connections = {}; local Hooked = {}
+    local Connections = {}
 
     local function Trigger()
         if not State.AutoBlock then return end
         if not QueryHitbox or not QueryHitbox.Parent then return end
         if not VC_IsPlayerInCone(Killer) then return end
+        DoBlock(QueryHitbox)
         task.spawn(TriggerBlockWithHitbox, Killer, QueryHitbox)
     end
 
-    -- Hook Animator — search all descendants in case it's nested
-    local function HookAnimator(Animator)
-        if not Animator then return end
-        table.insert(Connections, Animator.AnimationPlayed:Connect(function(Track)
+    -- animation-only hook
+    local function HookAnimator(Anim)
+        if not Anim then return end
+        table.insert(Connections, Anim.AnimationPlayed:Connect(function(Track)
             if not State.AutoBlock or not Track or not Track.Animation then return end
             local AnimId = tostring(Track.Animation.AnimationId or ""):match("%d+")
             if AnimId and AttackAnimations["rbxassetid://" .. AnimId] then Trigger() end
@@ -1216,28 +1220,16 @@ local function WatchKiller(Killer)
 
     local Animator = Humanoid:FindFirstChildOfClass("Animator")
     if not Animator then
-        -- Search deeper
         for _, d in Killer:GetDescendants() do
             if d:IsA("Animator") then Animator = d; break end
         end
     end
     HookAnimator(Animator)
 
-    local function HookSound(Sound)
-        if Hooked[Sound] or not AttackSounds[Sound.SoundId] then return end
-        Hooked[Sound] = true
-        table.insert(Connections, Sound.Played:Connect(Trigger))
-    end
-
     table.insert(Connections, Killer.DescendantAdded:Connect(function(Descendant)
-        if Descendant:IsA("Sound") and AttackSounds[Descendant.SoundId] then
-            Trigger(); HookSound(Descendant)
-        end
-        -- Late Animator (spawned after WatchKiller ran)
         if Descendant:IsA("Animator") and not Animator then
             Animator = Descendant; HookAnimator(Animator)
         end
-        -- Late QueryHitbox swap
         if Descendant.Name == "QueryHitbox" and Descendant:IsA("BasePart") then
             QueryHitbox = Descendant
         end
@@ -1250,10 +1242,6 @@ local function WatchKiller(Killer)
             table.clear(Connections); BlockWatchers[Killer] = nil
         end
     end))
-
-    for _, Descendant in Killer:GetDescendants() do
-        if Descendant:IsA("Sound") then HookSound(Descendant) end
-    end
 
     BlockWatchers[Killer] = function()
         for _, c in Connections do pcall(c.Disconnect, c) end
@@ -4815,279 +4803,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 -- ============================================================
 
--- ============================================================
--- AUTO BLOCK SLT (NightSaken v65.9 - sound + anim → hitbox)
--- ============================================================
-local NS = {}
-NS.active   = false
-NS.seen     = {}
-NS.hooked   = {}
-NS.config   = {
-    HitboxTransparency   = 0.8,
-    HitboxColor          = Color3.fromRGB(255, 255, 255),
-    HitboxHitColor       = Color3.fromRGB(0, 255, 0),
-    HitboxDistance       = 3,
-    ShowHitboxVisual     = true,
-    ShowOutline          = true,
-    OutlineThickness     = 0.04,
-    OutlineTransparency  = 0.6,
-    HitboxWidth          = 6,
-    HitboxLength         = 9,
-    HitboxHeight         = 6,
-    HitboxMultiplier     = 1,
-    BlockMode            = "Guest 1337",
-}
-
-local NS_KILLER_HITBOX = {
-    ["CoolKid"]   = { dura = 0.05, life = 0.05, width = 5, length = 7, height = 6 },
-    ["Slasher"]   = { dura = 0.35, life = 0.35 },
-    ["1x1x1x1"]  = { dura = 0.45, life = 0.45 },
-    ["JohnDoe"]   = { dura = 0.45, life = 0.45 },
-    ["John Doe"]  = { dura = 0.45, life = 0.45 },
-    ["Nosferatu"] = { dura = 0.42, life = 0.42 },
-    ["Sixer"]     = { dura = 0.42, life = 0.42, distance = 6.0 },
-    ["Noli"]      = { dura = 0.37, life = 0.37 },
-    ["Azure"]     = { dura = 0.35, life = 0.35 },
-}
-local NS_DEFAULT_HITBOX = { dura = 0.26, life = 0.26 }
-
-local function NS_GetKillerHitbox(name)
-    if not name then return NS_DEFAULT_HITBOX end
-    for k, v in pairs(NS_KILLER_HITBOX) do
-        if string.find(name, k, 1, true) then return v end
-    end
-    return NS_DEFAULT_HITBOX
-end
-
-local NS_SOUND_IDS = {
-    ["rbxassetid://100600301396617"]=true,["rbxassetid://101199185291628"]=true,["rbxassetid://101553872555606"]=true,
-    ["rbxassetid://101698569375359"]=true,["rbxassetid://104910828105172"]=true,["rbxassetid://105204810054381"]=true,
-    ["rbxassetid://105207247877248"]=true,["rbxassetid://105516183226360"]=true,["rbxassetid://105840448036441"]=true,
-    ["rbxassetid://106836941416453"]=true,["rbxassetid://107345261604889"]=true,["rbxassetid://107401225947000"]=true,
-    ["rbxassetid://108360420637223"]=true,["rbxassetid://108610718831698"]=true,["rbxassetid://108651070773439"]=true,
-    ["rbxassetid://108907358619313"]=true,["rbxassetid://109348678063422"]=true,["rbxassetid://109570290393196"]=true,
-    ["rbxassetid://111295935549452"]=true,["rbxassetid://112809109188560"]=true,["rbxassetid://113413858159336"]=true,
-    ["rbxassetid://114481520550129"]=true,["rbxassetid://114742322778642"]=true,["rbxassetid://115026634746636"]=true,
-    ["rbxassetid://115343460993527"]=true,["rbxassetid://115678417928765"]=true,["rbxassetid://116468089135195"]=true,
-    ["rbxassetid://116581754553533"]=true,["rbxassetid://117173212095661"]=true,["rbxassetid://117231507259853"]=true,
-    ["rbxassetid://118562842802948"]=true,["rbxassetid://119583605486352"]=true,["rbxassetid://119664480754070"]=true,
-    ["rbxassetid://119942598489800"]=true,["rbxassetid://120749612844426"]=true,["rbxassetid://121853342688333"]=true,
-    ["rbxassetid://121954639447247"]=true,["rbxassetid://12222208"]=true,["rbxassetid://12222216"]=true,
-    ["rbxassetid://122398404613193"]=true,["rbxassetid://123497933758952"]=true,["rbxassetid://123835423223220"]=true,
-    ["rbxassetid://123923371062204"]=true,["rbxassetid://124234993291213"]=true,["rbxassetid://124903763333174"]=true,
-    ["rbxassetid://125213046326879"]=true,["rbxassetid://126469686116453"]=true,["rbxassetid://127557531826290"]=true,
-    ["rbxassetid://128195973631079"]=true,["rbxassetid://128367348686124"]=true,["rbxassetid://128856426573270"]=true,
-    ["rbxassetid://131123355704017"]=true,["rbxassetid://131406927389838"]=true,["rbxassetid://132160759837000"]=true,
-    ["rbxassetid://132581672170205"]=true,["rbxassetid://133709029886490"]=true,["rbxassetid://134720314512566"]=true,
-    ["rbxassetid://135256560060972"]=true,["rbxassetid://135319730390518"]=true,["rbxassetid://136323728355613"]=true,
-    ["rbxassetid://137809737339569"]=true,["rbxassetid://138047522440301"]=true,["rbxassetid://139996647355899"]=true,
-    ["rbxassetid://140242176732868"]=true,["rbxassetid://18511965048"]=true,["rbxassetid://70626755789950"]=true,
-    ["rbxassetid://70739368096233"]=true,["rbxassetid://71805956520207"]=true,["rbxassetid://72085713525541"]=true,
-    ["rbxassetid://73662192846371"]=true,["rbxassetid://74809026448465"]=true,["rbxassetid://74842815979546"]=true,
-    ["rbxassetid://75330693422988"]=true,["rbxassetid://77649238882198"]=true,["rbxassetid://79391273191671"]=true,
-    ["rbxassetid://79612713897495"]=true,["rbxassetid://79980897195554"]=true,["rbxassetid://80516583309685"]=true,
-    ["rbxassetid://82221759983649"]=true,["rbxassetid://82843272472677"]=true,["rbxassetid://84307400688050"]=true,
-    ["rbxassetid://85853080745515"]=true,["rbxassetid://86174610237192"]=true,["rbxassetid://86506028049034"]=true,
-    ["rbxassetid://88589682639517"]=true,["rbxassetid://89004992452376"]=true,["rbxassetid://92869747208256"]=true,
-    ["rbxassetid://93299090238530"]=true,["rbxassetid://94273783714662"]=true,["rbxassetid://94317217837143"]=true,
-    ["rbxassetid://94632255644411"]=true,["rbxassetid://95079963655241"]=true,["rbxassetid://95863147467940"]=true,
-    ["rbxassetid://96117920303138"]=true,["rbxassetid://96594507550917"]=true,["rbxassetid://98111231282218"]=true,
-    ["rbxassetid://98675142200448"]=true,["rbxassetid://98733709078792"]=true,["rbxassetid://98742773509325"]=true,
-    ["rbxassetid://98866992038428"]=true,["rbxassetid://99215225043220"]=true,["rbxassetid://99856718263455"]=true,
-    ["rbxassetid://99918466107008"]=true,
-}
-
-local NS_ANIM_IDS = {
-    ["rbxassetid://104625283622511"]=true,["rbxassetid://105316545074913"]=true,["rbxassetid://105458270463374"]=true,
-    ["rbxassetid://105658601731267"]=true,["rbxassetid://106427068964975"]=true,["rbxassetid://106538427162796"]=true,
-    ["rbxassetid://106774825859733"]=true,["rbxassetid://106860049270347"]=true,["rbxassetid://108196996477620"]=true,
-    ["rbxassetid://109246041199659"]=true,["rbxassetid://109572851772132"]=true,["rbxassetid://109667959938617"]=true,
-    ["rbxassetid://110153465553223"]=true,["rbxassetid://112609100667470"]=true,["rbxassetid://113041754598835"]=true,
-    ["rbxassetid://114126519127454"]=true,["rbxassetid://114266653674439"]=true,["rbxassetid://114348932845243"]=true,
-    ["rbxassetid://114506382930939"]=true,["rbxassetid://116107946837042"]=true,["rbxassetid://116618003477002"]=true,
-    ["rbxassetid://117384979233854"]=true,["rbxassetid://118298475669935"]=true,["rbxassetid://120059928759346"]=true,
-    ["rbxassetid://120112897026015"]=true,["rbxassetid://120161287604619"]=true,["rbxassetid://120950360130737"]=true,
-    ["rbxassetid://121080480916189"]=true,["rbxassetid://121293883585738"]=true,["rbxassetid://121858217776572"]=true,
-    ["rbxassetid://12222208"]=true,["rbxassetid://122709416391891"]=true,["rbxassetid://123172382755876"]=true,
-    ["rbxassetid://123556520269026"]=true,["rbxassetid://124269076578545"]=true,["rbxassetid://124523003071322"]=true,
-    ["rbxassetid://124705663396411"]=true,["rbxassetid://125403313786645"]=true,["rbxassetid://126038164510727"]=true,
-    ["rbxassetid://126131675979001"]=true,["rbxassetid://126171487400618"]=true,["rbxassetid://126830014841198"]=true,
-    ["rbxassetid://127154365553241"]=true,["rbxassetid://127245564598429"]=true,["rbxassetid://128137868531863"]=true,
-    ["rbxassetid://129260077168659"]=true,["rbxassetid://129405885079224"]=true,["rbxassetid://129638875679599"]=true,
-    ["rbxassetid://129853747901446"]=true,["rbxassetid://129921445546291"]=true,["rbxassetid://130321333480982"]=true,
-    ["rbxassetid://130812999515723"]=true,["rbxassetid://130958529065375"]=true,["rbxassetid://133509103047518"]=true,
-    ["rbxassetid://134720314512566"]=true,["rbxassetid://134815821722409"]=true,["rbxassetid://135372846369700"]=true,
-    ["rbxassetid://135853087227453"]=true,["rbxassetid://136472776382806"]=true,["rbxassetid://138547840635558"]=true,
-    ["rbxassetid://138938529389204"]=true,["rbxassetid://139688966958293"]=true,["rbxassetid://18885909645"]=true,
-    ["rbxassetid://70371667919898"]=true,["rbxassetid://70785407091644"]=true,["rbxassetid://70948173568515"]=true,
-    ["rbxassetid://73248483552036"]=true,["rbxassetid://74707328554358"]=true,["rbxassetid://77375846492436"]=true,
-    ["rbxassetid://80073963691293"]=true,["rbxassetid://80277760801310"]=true,["rbxassetid://80540530406270"]=true,
-    ["rbxassetid://81299297965542"]=true,["rbxassetid://81362825527808"]=true,["rbxassetid://82336352305186"]=true,
-    ["rbxassetid://82843272472677"]=true,["rbxassetid://83829782357897"]=true,["rbxassetid://84069821282466"]=true,
-    ["rbxassetid://84116622032112"]=true,["rbxassetid://87294535821555"]=true,["rbxassetid://87989533095285"]=true,
-    ["rbxassetid://88451353906104"]=true,["rbxassetid://88970503168421"]=true,["rbxassetid://90289023448875"]=true,
-    ["rbxassetid://90620531468240"]=true,["rbxassetid://91509234639766"]=true,["rbxassetid://91775720375859"]=true,
-    ["rbxassetid://92567970681901"]=true,["rbxassetid://93069721274110"]=true,["rbxassetid://93366464803829"]=true,
-    ["rbxassetid://94958041603347"]=true,["rbxassetid://95216132788412"]=true,["rbxassetid://96587400766332"]=true,
-    ["rbxassetid://99824350842479"]=true,["rbxassetid://99829427721752"]=true,
-}
-
-local function NS_IsMe(model)
-    return model and (Players:GetPlayerFromCharacter(model) == LocalPlayer or model.Name == LocalPlayer.Name)
-end
-
-local function NS_MakeHitboxAndBlock(killerModel)
-    if not killerModel or not killerModel.Parent then return end
-    local killerRoot = killerModel:FindFirstChild("HumanoidRootPart") or killerModel:FindFirstChild("RootPart")
-    if not killerRoot then return end
-    local cfg = NS.config
-    local hbCfg = NS_GetKillerHitbox(killerModel.Name)
-    local m = cfg.HitboxMultiplier
-    local size = Vector3.new(
-        (hbCfg.width  or cfg.HitboxWidth)  * m,
-        (hbCfg.height or cfg.HitboxHeight) * m,
-        (hbCfg.length or cfg.HitboxLength) * m
-    )
-    -- Build OverlapParams once — reused every iteration, no per-frame allocation
-    local op = OverlapParams.new()
-    op.FilterType = Enum.RaycastFilterType.Exclude
-    op.FilterDescendantsInstances = { killerModel }
-
-    -- Create the hitbox part once and reposition it each frame instead of
-    -- spawning a new instance every heartbeat (saves ~80% of loop cost)
-    local hb = Instance.new("Part")
-    hb.Name        = "NS_AltBlockHitbox"
-    hb.Transparency= cfg.ShowHitboxVisual and cfg.HitboxTransparency or 1
-    hb.CanCollide  = false; hb.CanTouch = false; hb.CanQuery = false
-    hb.CastShadow  = false; hb.Anchored = true
-    hb.Size        = size;  hb.Color    = cfg.HitboxColor
-    hb.Material    = Enum.Material.ForceField
-    hb.Parent      = workspace
-    local sb
-    if cfg.ShowOutline and cfg.ShowHitboxVisual then
-        sb = Instance.new("SelectionBox")
-        sb.Adornee      = hb; sb.Color3 = cfg.HitboxColor
-        sb.LineThickness = cfg.OutlineThickness
-        sb.Transparency  = cfg.OutlineTransparency
-        sb.Visible = true; sb.Parent = hb
-    end
-
-    task.spawn(function()
-        local offset    = hbCfg.distance or cfg.HitboxDistance
-        local deadline  = tick() + hbCfg.dura
-        local blocked   = false
-
-        while tick() < deadline do
-            if blocked then break end
-            local kr = killerModel:FindFirstChild("HumanoidRootPart") or killerModel:FindFirstChild("RootPart")
-            if not kr then break end
-
-            -- Reposition the existing part — no instance creation this frame
-            hb.CFrame = kr.CFrame * CFrame.new(0, 0, -offset)
-
-            -- Use GetPartBoundsInBox directly (faster than GetPartsInPart on an anchored part)
-            local localChar = LocalCharacter
-            if localChar then
-                local lq = localChar:FindFirstChild("QueryHitbox") or localChar:FindFirstChild("HumanoidRootPart")
-                if lq then
-                    local hits = workspace:GetPartBoundsInBox(hb.CFrame, size, op)
-                    for _, part in ipairs(hits) do
-                        if part == lq or part:IsDescendantOf(localChar) then
-                            local hum = localChar:FindFirstChildOfClass("Humanoid")
-                            if hum and hum.Health > 0 then
-                                blocked = true
-                                pcall(function()
-                                    hb.Color = cfg.HitboxHitColor
-                                    if sb then sb.Color3 = cfg.HitboxHitColor end
-                                end)
-                                local abilityName = (cfg.BlockMode == "007n7") and "Clone" or "Block"
-                                FireAbility(abilityName)
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-
-            -- RenderStepped fires before physics — tighter timing than Heartbeat
-            RunService.RenderStepped:Wait()
-        end
-
-        -- Clean up the single shared part when the window closes
-        pcall(function() hb:Destroy() end)
-    end)
-end
-
-local function NS_Trigger(model)
-    if not NS.active then return end
-    if not model or not model.Parent or NS_IsMe(model) then return end
-    if NS.seen[model] and os.clock() < NS.seen[model] then return end
-    NS.seen[model] = os.clock() + 0.05
-    NS_MakeHitboxAndBlock(model)
-end
-
-local function NS_HookSound(snd, model)
-    if not snd or not snd:IsA("Sound") or NS.hooked[snd] then return end
-    NS.hooked[snd] = true
-    snd.Played:Connect(function()
-        if not NS.active then return end
-        if not NS_SOUND_IDS[snd.SoundId] then return end
-        NS_Trigger(model or snd:FindFirstAncestorOfClass("Model"))
-    end)
-end
-
-local function NS_HookAnim(model)
-    if not model or NS_IsMe(model) then return end
-    task.spawn(function()
-        local hum = model:WaitForChild("Humanoid", 5); if not hum then return end
-        local an = hum:FindFirstChildOfClass("Animator") or hum
-        an.AnimationPlayed:Connect(function(tr)
-            if not NS.active or not tr.Animation then return end
-            if not NS_ANIM_IDS[tr.Animation.AnimationId] then return end
-            NS_Trigger(model)
-        end)
-    end)
-end
-
-local function NS_HookModel(m)
-    if not m or not m:IsA("Model") or NS_IsMe(m) then return end
-    for _, d in ipairs(m:GetDescendants()) do
-        if d:IsA("Sound") then pcall(NS_HookSound, d, m) end
-    end
-    m.DescendantAdded:Connect(function(d)
-        if d:IsA("Sound") and not NS_IsMe(m) then pcall(NS_HookSound, d, m) end
-    end)
-    NS_HookAnim(m)
-end
-
-local NS_KillerAddedConn = nil
-local function NS_Start()
-    if NS.active then return end
-    NS.active = true
-    if not KillersFolder then return end
-    for _, c in ipairs(KillersFolder:GetChildren()) do
-        if c:IsA("Model") then pcall(NS_HookModel, c) end
-    end
-    if not NS_KillerAddedConn then
-        NS_KillerAddedConn = KillersFolder.ChildAdded:Connect(function(c)
-            if c:IsA("Model") then pcall(NS_HookModel, c) end
-        end)
-    end
-end
-
-local function NS_Stop()
-    NS.active = false
-    table.clear(NS.seen)
-    if NS_KillerAddedConn then NS_KillerAddedConn:Disconnect(); NS_KillerAddedConn = nil end
-end
-
-local function SetAutoBlockAlt(on)
-    if on then NS_Start() else NS_Stop() end
-end
--- ============================================================
-
 local TabAutoBlock    = Window:Tab({ Title = "Auto Block",     Icon = "shield" })
-local TabAutoBlockAlt = Window:Tab({ Title = "Auto Block Alt", Icon = "shield" })
 local TabVeeronica    = Window:Tab({ Title = "Veeronica",      Icon = "star" })
 local TabElliot    = Window:Tab({ Title = "Elliot",     Icon = "zap" })
 local TabMisc      = Window:Tab({ Title = "Misc",       Icon = "settings" })
@@ -5165,27 +4881,6 @@ end)
 AddSection(TabAutoBlock, "Punch (Original)")
 AddToggle(TabAutoBlock, "PunchAimbot", "Punch Aimbot (Two-Time)", false)
 AddToggle(TabAutoBlock, "AutoPunch",   "Auto Punch Counter",       false)
-
--- ============================================================
--- AUTO BLOCK ALT TAB UI  (JJ1 Box Block replacement)
--- ============================================================
-AddSection(TabAutoBlockAlt, "Box Block")
-AddToggle(TabAutoBlockAlt, "NS_AutoBlock", "Auto Block Alt", false, function(v)
-    SetAutoBlockAlt(v)
-end)
-AddDropdown(TabAutoBlockAlt, "NS_BlockMode", "Block Mode", { "Guest 1337", "007n7" }, "Guest 1337", function(v)
-    NS.config.BlockMode = v
-end)
-
-AddSection(TabAutoBlockAlt, "Hitbox")
-AddSlider(TabAutoBlockAlt, "NS_HitboxMult",   "Hitbox Scale",           0.5, 2.5, 1,    0.05, function(v) NS.config.HitboxMultiplier = v end)
-AddSlider(TabAutoBlockAlt, "NS_HitboxDist",   "Hitbox Offset (studs)",   -5,   5, 3,     0.1, function(v) NS.config.HitboxDistance   = v end)
-AddToggle(TabAutoBlockAlt, "NS_ShowHitbox",   "Show Hitbox Visual", true, function(v)
-    NS.config.ShowHitboxVisual = v
-end)
-AddToggle(TabAutoBlockAlt, "NS_ShowOutline",  "Show Outline", true, function(v)
-    NS.config.ShowOutline = v
-end)
 
 
 AddSection(TabVeeronica, "Veeronica Scripts")
