@@ -1204,14 +1204,13 @@ local function WatchKiller(Killer)
         if not State.AutoBlock then return end
         if not QueryHitbox or not QueryHitbox.Parent then return end
         if not VC_IsPlayerInCone(Killer) then return end
-        -- When JHB hitbox gate is on, skip the instant block entirely and only
-        -- block once the hitbox poll confirms the player is inside the OBB.
+        -- JHB gate: if the hitbox feature is on, only block when the player
+        -- is inside the killer's OBB. Animation alone is not enough.
         if JHB.Enabled then
-            task.spawn(TriggerBlockWithHitbox, Killer, QueryHitbox)
-        else
-            DoBlock(QueryHitbox)
-            task.spawn(TriggerBlockWithHitbox, Killer, QueryHitbox)
+            local killerHRP = Killer and Killer:FindFirstChild("HumanoidRootPart")
+            if not killerHRP or not JHB_IsInside(killerHRP) then return end
         end
+        DoBlock(QueryHitbox)
     end
 
     -- animation-only hook
@@ -1259,7 +1258,25 @@ local KillerAddedConnection
 function SetAutoBlock(Enabled)
     State.AutoBlock = Enabled
     if Enabled then
-        if not KillersFolder then return end
+        RefreshFolders()
+        if not KillersFolder then
+            -- Killers folder not found yet — retry in background until it appears
+            task.spawn(function()
+                for _ = 1, 20 do
+                    task.wait(1)
+                    RefreshFolders()
+                    if KillersFolder then break end
+                end
+                if not KillersFolder or not State.AutoBlock then return end
+                for _, Killer in KillersFolder:GetChildren() do task.spawn(WatchKiller, Killer) end
+                if not KillerAddedConnection then
+                    KillerAddedConnection = KillersFolder.ChildAdded:Connect(function(Killer)
+                        if State.AutoBlock then task.spawn(WatchKiller, Killer) end
+                    end)
+                end
+            end)
+            return
+        end
         for _, Killer in KillersFolder:GetChildren() do task.spawn(WatchKiller, Killer) end
         if not KillerAddedConnection then
             KillerAddedConnection = KillersFolder.ChildAdded:Connect(function(Killer)
