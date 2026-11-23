@@ -1204,8 +1204,14 @@ local function WatchKiller(Killer)
         if not State.AutoBlock then return end
         if not QueryHitbox or not QueryHitbox.Parent then return end
         if not VC_IsPlayerInCone(Killer) then return end
-        DoBlock(QueryHitbox)
-        task.spawn(TriggerBlockWithHitbox, Killer, QueryHitbox)
+        -- When JHB hitbox gate is on, skip the instant block entirely and only
+        -- block once the hitbox poll confirms the player is inside the OBB.
+        if JHB.Enabled then
+            task.spawn(TriggerBlockWithHitbox, Killer, QueryHitbox)
+        else
+            DoBlock(QueryHitbox)
+            task.spawn(TriggerBlockWithHitbox, Killer, QueryHitbox)
+        end
     end
 
     -- animation-only hook
