@@ -618,13 +618,10 @@ end
 -- ui load (Obsidian UI)
 
 local Library
-local _cacheFile = "FlexSaken_ObsidianUI.lua"
+local _cacheFile = "FlexSaken_ObsidianUI_v2.lua"
 local _uiUrls = {
-    -- Primary: bundled copy inside the VapeV4 repo (same 7GrandDad author, same API)
-    "https://raw.githubusercontent.com/7GrandDadPGN/VapeV4ForRoblox/main/NewGuiLibrary.lua",
-    -- Fallbacks: original repo paths (kept in case the repo comes back or is forked)
-    "https://raw.githubusercontent.com/7GrandDadPGN/ObsidianUI-for-roblox/main/ObsidianUI.lua",
-    "https://raw.githubusercontent.com/7GrandDadPGN/ObsidianUI-for-roblox/refs/heads/main/ObsidianUI.lua",
+    "https://raw.githubusercontent.com/deividcomsono/Obsidian/refs/heads/main/Library.lua",
+    "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua",
 }
 
 pcall(function()
@@ -664,6 +661,97 @@ if not Library then
             if ok and result then Library = result; break end
         end
         if Library then break end
+    end
+end
+
+-- Compatibility shim: the new deividcomsono/Obsidian API uses AddTab/AddLeftGroupbox
+-- instead of the old CreateTab/CreateSection. Wrap it so the rest of the script
+-- (which calls CreateTab and CreateSection) works without changes.
+if Library then
+    -- Wrap Library:CreateWindow so its result has :CreateTab
+    local _origCreateWindow = Library.CreateWindow
+    Library.CreateWindow = function(self, opts)
+        -- Map old option keys to new ones
+        if opts then
+            if opts.Name and not opts.Title then opts.Title = opts.Name end
+            if opts.Themename then opts.Themename = nil end -- not used in new API
+            if opts.ToggleKey then
+                opts.ToggleKeybind = opts.ToggleKey
+                opts.ToggleKey = nil
+            end
+        end
+        local win = _origCreateWindow(self, opts)
+        if not win then return win end
+
+        -- inject :CreateTab onto the window object
+        win.CreateTab = function(_, tabName)
+            local tab = win:AddTab(tabName)
+            if not tab then return nil end
+            -- inject :CreateSection onto the tab
+            local function wrapTab(t)
+                t.CreateSection = function(_, sectionName)
+                    local gb = t:AddLeftGroupbox(sectionName or "")
+                    if not gb then return t end
+                    -- the groupbox already has AddToggle, AddSlider, etc. in the new API
+                    -- but the new API uses {Text=, Callback=} tables instead of {Name=, Callback=}
+                    -- wrap each element adder to remap Name→Text
+                    local function wrapAdder(orig)
+                        return function(gbSelf, info)
+                            if type(info) == "table" then
+                                if info.Name and not info.Text then
+                                    info.Text = info.Name
+                                    info.Name = nil
+                                end
+                                -- Increment → Rounding mapping for sliders
+                                if info.Increment and not info.Rounding then
+                                    info.Rounding = info.Increment
+                                    info.Increment = nil
+                                end
+                                -- Options → Values mapping for dropdowns
+                                if info.Options and not info.Values then
+                                    info.Values = info.Options
+                                    info.Options = nil
+                                end
+                            end
+                            return orig(gbSelf, info)
+                        end
+                    end
+                    if gb.AddToggle  then gb._rawAddToggle  = gb.AddToggle;  gb.AddToggle  = wrapAdder(gb._rawAddToggle)  end
+                    if gb.AddSlider  then gb._rawAddSlider  = gb.AddSlider;  gb.AddSlider  = wrapAdder(gb._rawAddSlider)  end
+                    if gb.AddDropdown then gb._rawAddDropdown = gb.AddDropdown; gb.AddDropdown = wrapAdder(gb._rawAddDropdown) end
+                    if gb.AddTextbox then gb._rawAddTextbox = gb.AddTextbox; gb.AddTextbox = wrapAdder(gb._rawAddTextbox) end
+                    if gb.AddButton  then gb._rawAddButton  = gb.AddButton
+                        gb.AddButton = function(gbSelf, info)
+                            if type(info) == "table" then
+                                if info.Name and not info.Text then info.Text = info.Name; info.Name = nil end
+                                if info.Callback and not info.Func then info.Func = info.Callback; info.Callback = nil end
+                            end
+                            return gb._rawAddButton(gbSelf, info)
+                        end
+                    end
+                    return gb
+                end
+                return t
+            end
+            return wrapTab(tab)
+        end
+        return win
+    end
+
+    -- Wrap Library:Notify for old {Title, Content, Duration} format
+    local _origNotify = Library.Notify
+    Library.Notify = function(self, info)
+        if type(info) == "table" then
+            if info.Content and not info.Description then
+                info.Description = info.Content
+                info.Content = nil
+            end
+            if info.Duration and not info.Time then
+                info.Time = info.Duration
+                info.Duration = nil
+            end
+        end
+        return _origNotify(self, info)
     end
 end
 
