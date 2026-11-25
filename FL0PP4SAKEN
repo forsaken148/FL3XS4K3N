@@ -620,6 +620,9 @@ end
 local Library
 local _cacheFile = "FlexSaken_ObsidianUI.lua"
 local _uiUrls = {
+    -- Primary: bundled copy inside the VapeV4 repo (same 7GrandDad author, same API)
+    "https://raw.githubusercontent.com/7GrandDadPGN/VapeV4ForRoblox/main/NewGuiLibrary.lua",
+    -- Fallbacks: original repo paths (kept in case the repo comes back or is forked)
     "https://raw.githubusercontent.com/7GrandDadPGN/ObsidianUI-for-roblox/main/ObsidianUI.lua",
     "https://raw.githubusercontent.com/7GrandDadPGN/ObsidianUI-for-roblox/refs/heads/main/ObsidianUI.lua",
 }
