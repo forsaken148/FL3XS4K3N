@@ -1536,7 +1536,7 @@ do
         ["Noli"]      = { dura = 0.37, life = 0.37 },
         ["Azure"]     = { dura = 0.35, life = 0.35 },
     }
-    local DEFAULT_HITBOX = { dura = 0.26, life = 0.26 }
+    local DEFAULT_HITBOX = { dura = 0.01, life = 0.01 }
 
     local function getKillerHitbox(killerName)
         if not killerName then return DEFAULT_HITBOX end
@@ -1682,6 +1682,9 @@ do
     }
 
     local _ab_animIDs = {
+        ["rbxassetid://111985378056728"]=true,
+        ["rbxassetid://80398233021916"]=true,
+        ["rbxassetid://103806241180745"]=true,
         ["rbxassetid://104625283622511"]=true,["rbxassetid://105316545074913"]=true,["rbxassetid://105458270463374"]=true,
         ["rbxassetid://105658601731267"]=true,["rbxassetid://106427068964975"]=true,["rbxassetid://106538427162796"]=true,
         ["rbxassetid://106774825859733"]=true,["rbxassetid://106860049270347"]=true,["rbxassetid://108196996477620"]=true,
@@ -1714,6 +1717,7 @@ do
         ["rbxassetid://92567970681901"]=true,["rbxassetid://93069721274110"]=true,["rbxassetid://93366464803829"]=true,
         ["rbxassetid://94958041603347"]=true,["rbxassetid://95216132788412"]=true,["rbxassetid://96587400766332"]=true,
         ["rbxassetid://99824350842479"]=true,["rbxassetid://99829427721752"]=true,
+        ["rbxassetid://99918466107008"]=true,
     }
 
     local function _ab_isMe(m)
@@ -1724,7 +1728,7 @@ do
         if not _ab_active or not State.AutoBlock then return end
         if not model or not model.Parent or _ab_isMe(model) then return end
         if _ab_seen[model] and os.clock() < _ab_seen[model] then return end
-        _ab_seen[model] = os.clock() + 0.05
+        _ab_seen[model] = os.clock() + 0.01
         makeHitboxAndCheck(model, function() fireBlockNS() end)
     end
 
