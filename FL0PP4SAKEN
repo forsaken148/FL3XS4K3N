@@ -812,20 +812,23 @@ if not Library then
     flashError("ObsidianUI failed to load - running without the menu. Saved settings still apply. Check your internet and HttpGet permissions.")
     Library = MakeStubUI()
     UsingStub = true
+else
+    pcall(function()
+        Library.ForceCheckbox = false
+        Library.ShowToggleFrameInKeybinds = true
+    end)
 end
 
 local Window
 do
     local Created, Result = pcall(function()
         return Library:CreateWindow({
-            Name           = "Flex Saken",
             Title          = "Flex Saken",
-            Footer         = "v1.1",
-            Themename      = "Dark",
-            ToggleKey      = Enum.KeyCode.RightShift,
+            Footer         = "v1.1 — Crimson",
             ToggleKeybind  = Enum.KeyCode.RightShift,
             Center         = true,
             AutoShow       = true,
+            Name           = "Flex Saken",
         })
     end)
     if Created and Result then
@@ -871,6 +874,16 @@ end
 -- Obsidian UI: Window → Tab → Section → Elements
 -- We keep a "current section" per tab so callers just pass the Tab.
 local _TabSections = {}
+local LibraryToggles = nil
+local LibraryOptions = nil
+pcall(function()
+    if Library then
+        Library.ForceCheckbox = false
+        LibraryToggles = Library.Toggles
+        LibraryOptions = Library.Options
+    end
+end)
+
 local function _GetSection(Tab)
     if not Tab then return nil end
     if not _TabSections[Tab] then
@@ -886,6 +899,7 @@ local function _GetSection(Tab)
                 sec = Tab:Section({ Title = "General" })
             end
         end)
+        -- If section is the tab itself, still ok for some UIs
         _TabSections[Tab] = sec or Tab
     end
     return _TabSections[Tab]
@@ -908,74 +922,69 @@ local function AddSection(Tab, Title)
     if sec then _TabSections[Tab] = sec end
 end
 
--- Force real labels on every control. Tries Obsidian (Text/Default/Rounding),
--- then legacy Name/Value/Increment shapes, then WindUI-style Title tables.
 local function AddToggle(Tab, Key, Title, Default, Callback)
     local Value = Saved[Key]
     if type(Value) ~= "boolean" then Value = Default end
     State[Key] = Value
     local Element
     local Sec = _GetSection(Tab)
+
     local function onToggle(New)
-        State[Key] = New
-        Saved[Key] = New
+        local v = New
+        if type(v) == "table" and v.Value ~= nil then v = v.Value end
+        State[Key] = v and true or false
+        Saved[Key] = State[Key]
         SaveSettings()
-        if Callback then task.spawn(SafeCall, Key, Callback, New) end
+        if Callback then task.spawn(SafeCall, Key, Callback, State[Key]) end
     end
+
     local Ok, Err = pcall(function()
-        if not Sec then error("no section") end
+        if not Sec then error("no section for toggle " .. tostring(Title)) end
+        -- PRIMARY: Obsidian Groupbox:AddToggle(Idx, { Text, Default, Callback })
         if type(Sec.AddToggle) == "function" then
-            -- Obsidian: Idx, { Text, Default, Callback }
-            local ok1, el1 = pcall(function()
-                return Sec:AddToggle(Key, {
-                    Text = Title,
-                    Default = Value,
-                    Callback = onToggle,
-                })
-            end)
-            if ok1 and el1 then Element = el1; return end
-            -- some forks: only options table, no index
-            local ok2, el2 = pcall(function()
-                return Sec:AddToggle({
-                    Text = Title,
-                    Name = Title,
-                    Title = Title,
-                    Default = Value,
-                    Value = Value,
-                    Callback = onToggle,
-                })
-            end)
-            if ok2 and el2 then Element = el2; return end
-            -- last resort with Name key
-            Element = Sec:AddToggle(Key, {
-                Name = Title,
-                Text = Title,
-                Title = Title,
+            Element = Sec:AddToggle(tostring(Key), {
+                Text = tostring(Title),
                 Default = Value,
-                Value = Value,
                 Callback = onToggle,
             })
-        elseif type(Sec.Toggle) == "function" then
+            return
+        end
+        -- WindUI / other: Tab:Toggle({ Title, Value, Callback })
+        if type(Sec.Toggle) == "function" then
             Element = Sec:Toggle({
-                Title = Title,
-                Name = Title,
-                Text = Title,
+                Title = tostring(Title),
+                Text = tostring(Title),
                 Value = Value,
                 Default = Value,
                 Callback = onToggle,
             })
-        else
-            error("section has no AddToggle/Toggle")
+            return
+        end
+        error("section has no AddToggle/Toggle")
+    end)
+    if not Ok then
+        warn("[FlexSaken] Toggle '" .. tostring(Title) .. "' failed: " .. tostring(Err))
+    end
+
+    -- Prefer Library.Toggles registry + OnChanged (official Obsidian pattern)
+    pcall(function()
+        local T = (Library and Library.Toggles and Library.Toggles[Key]) or Element
+        if T then
+            if type(T.OnChanged) == "function" then
+                T:OnChanged(function(v)
+                    onToggle(v)
+                end)
+            end
+            if type(T.SetValue) == "function" then
+                T:SetValue(Value)
+            end
+            if type(T.SetText) == "function" then
+                T:SetText(tostring(Title))
+            end
+            Element = T
         end
     end)
-    if not Ok then warn("[FlexSaken] Toggle '" .. tostring(Title) .. "' failed: " .. tostring(Err)) end
-    -- ensure label text is applied if the element exposes SetText
-    if Element then
-        pcall(function()
-            if type(Element.SetText) == "function" then Element:SetText(Title) end
-            if type(Element.SetValue) == "function" then Element:SetValue(Value) end
-        end)
-    end
+
     Registry[Key] = { Kind = "toggle", Default = Default, Callback = Callback, Element = Element }
     if Callback and Value then task.defer(SafeCall, Key, Callback, Value) end
     return Element
@@ -987,76 +996,65 @@ local function AddSlider(Tab, Key, Title, Min, Max, Default, Step, Callback)
     State[Key] = Value
     local Element
     local Sec = _GetSection(Tab)
+
     local function onSlide(New)
-        State[Key] = New
-        Saved[Key] = New
+        local v = New
+        if type(v) == "table" and v.Value ~= nil then v = v.Value end
+        v = tonumber(v) or Value
+        State[Key] = v
+        Saved[Key] = v
         SaveSettings()
-        if Callback then task.spawn(SafeCall, Key, Callback, New) end
+        if Callback then task.spawn(SafeCall, Key, Callback, v) end
     end
+
     local Ok, Err = pcall(function()
-        if not Sec then error("no section") end
+        if not Sec then error("no section for slider " .. tostring(Title)) end
         if type(Sec.AddSlider) == "function" then
-            local ok1, el1 = pcall(function()
-                return Sec:AddSlider(Key, {
-                    Text = Title,
-                    Min = Min,
-                    Max = Max,
-                    Default = Value,
-                    Rounding = Step or 1,
-                    Callback = onSlide,
-                })
-            end)
-            if ok1 and el1 then Element = el1; return end
-            local ok2, el2 = pcall(function()
-                return Sec:AddSlider({
-                    Text = Title,
-                    Name = Title,
-                    Title = Title,
-                    Min = Min,
-                    Max = Max,
-                    Default = Value,
-                    Value = Value,
-                    Rounding = Step or 1,
-                    Increment = Step or 1,
-                    Callback = onSlide,
-                })
-            end)
-            if ok2 and el2 then Element = el2; return end
-            Element = Sec:AddSlider(Key, {
-                Name = Title,
-                Text = Title,
-                Title = Title,
+            Element = Sec:AddSlider(tostring(Key), {
+                Text = tostring(Title),
                 Min = Min,
                 Max = Max,
                 Default = Value,
-                Value = Value,
                 Rounding = Step or 1,
-                Increment = Step or 1,
                 Callback = onSlide,
             })
-        elseif type(Sec.Slider) == "function" then
+            return
+        end
+        if type(Sec.Slider) == "function" then
             Element = Sec:Slider({
-                Title = Title,
-                Name = Title,
-                Text = Title,
+                Title = tostring(Title),
+                Text = tostring(Title),
+                Min = Min,
+                Max = Max,
+                Default = Value,
                 Step = Step or 1,
                 Value = { Min = Min, Max = Max, Default = Value },
-                Min = Min,
-                Max = Max,
-                Default = Value,
                 Callback = onSlide,
             })
-        else
-            error("section has no AddSlider/Slider")
+            return
+        end
+        error("section has no AddSlider/Slider")
+    end)
+    if not Ok then
+        warn("[FlexSaken] Slider '" .. tostring(Title) .. "' failed: " .. tostring(Err))
+    end
+
+    pcall(function()
+        local O = (Library and Library.Options and Library.Options[Key]) or Element
+        if O then
+            if type(O.OnChanged) == "function" then
+                O:OnChanged(function(v) onSlide(v) end)
+            end
+            if type(O.SetValue) == "function" then
+                O:SetValue(Value)
+            end
+            if type(O.SetText) == "function" then
+                O:SetText(tostring(Title))
+            end
+            Element = O
         end
     end)
-    if not Ok then warn("[FlexSaken] Slider '" .. tostring(Title) .. "' failed: " .. tostring(Err)) end
-    if Element then
-        pcall(function()
-            if type(Element.SetText) == "function" then Element:SetText(Title) end
-            if type(Element.SetValue) == "function" then Element:SetValue(Value) end
-        end)
-    end
+
     if Callback then task.defer(SafeCall, Key, Callback, Value) end
     Registry[Key] = { Kind = "slider", Default = Default, Callback = Callback, Element = Element }
     return Element
@@ -1068,55 +1066,56 @@ local function AddDropdown(Tab, Key, Title, Values, Default, Callback)
     State[Key] = Value
     local Element
     local Sec = _GetSection(Tab)
+
     local function onPick(New)
-        State[Key] = New
-        Saved[Key] = New
+        local v = New
+        if type(v) == "table" then
+            v = v.Value or v[1] or v
+        end
+        State[Key] = v
+        Saved[Key] = v
         SaveSettings()
-        if Callback then task.spawn(SafeCall, Key, Callback, New) end
+        if Callback then task.spawn(SafeCall, Key, Callback, v) end
     end
+
     local Ok, Err = pcall(function()
-        if not Sec then error("no section") end
+        if not Sec then error("no section for dropdown " .. tostring(Title)) end
         if type(Sec.AddDropdown) == "function" then
-            local ok1, el1 = pcall(function()
-                return Sec:AddDropdown(Key, {
-                    Text = Title,
-                    Values = Values,
-                    Default = Value,
-                    Callback = onPick,
-                })
-            end)
-            if ok1 and el1 then Element = el1; return end
-            Element = Sec:AddDropdown(Key, {
-                Name = Title,
-                Text = Title,
-                Title = Title,
+            Element = Sec:AddDropdown(tostring(Key), {
+                Text = tostring(Title),
                 Values = Values,
-                Options = Values,
                 Default = Value,
-                Value = Value,
                 Callback = onPick,
             })
-        elseif type(Sec.Dropdown) == "function" then
+            return
+        end
+        if type(Sec.Dropdown) == "function" then
             Element = Sec:Dropdown({
-                Title = Title,
-                Name = Title,
-                Text = Title,
+                Title = tostring(Title),
+                Text = tostring(Title),
                 Values = Values,
                 Value = Value,
                 Default = Value,
                 Callback = onPick,
             })
-        else
-            error("section has no AddDropdown/Dropdown")
+            return
+        end
+        error("section has no AddDropdown/Dropdown")
+    end)
+    if not Ok then
+        warn("[FlexSaken] Dropdown '" .. tostring(Title) .. "' failed: " .. tostring(Err))
+    end
+
+    pcall(function()
+        local O = (Library and Library.Options and Library.Options[Key]) or Element
+        if O then
+            if type(O.OnChanged) == "function" then O:OnChanged(function(v) onPick(v) end) end
+            if type(O.SetValue) == "function" then O:SetValue(Value) end
+            if type(O.SetText) == "function" then O:SetText(tostring(Title)) end
+            Element = O
         end
     end)
-    if not Ok then warn("[FlexSaken] Dropdown '" .. tostring(Title) .. "' failed: " .. tostring(Err)) end
-    if Element then
-        pcall(function()
-            if type(Element.SetText) == "function" then Element:SetText(Title) end
-            if type(Element.SetValue) == "function" then Element:SetValue(Value) end
-        end)
-    end
+
     if Callback then task.defer(SafeCall, Key, Callback, Value) end
     Registry[Key] = { Kind = "dropdown", Default = Default, Callback = Callback, Element = Element }
     return Element
@@ -1133,41 +1132,23 @@ local function AddInput(Tab, Key, Title, Default, Callback)
     pcall(function()
         if not Sec then return end
         if type(Sec.AddInput) == "function" then
-            local ok1, el1 = pcall(function()
-                return Sec:AddInput(Key, {
-                    Text = Title,
-                    Default = tostring(Default or ""),
-                    Finished = false,
-                    Placeholder = "",
-                    Callback = onInput,
-                })
-            end)
-            if ok1 and el1 then Element = el1; return end
-            Element = Sec:AddInput(Key, {
-                Name = Title,
-                Text = Title,
-                Title = Title,
+            Element = Sec:AddInput(tostring(Key), {
+                Text = tostring(Title),
                 Default = tostring(Default or ""),
-                Value = tostring(Default or ""),
+                Finished = false,
                 Placeholder = "",
                 Callback = onInput,
             })
         elseif type(Sec.Input) == "function" then
             Element = Sec:Input({
-                Title = Title,
-                Name = Title,
-                Text = Title,
+                Title = tostring(Title),
+                Text = tostring(Title),
                 Value = Default,
                 Placeholder = Default,
                 Callback = onInput,
             })
         end
     end)
-    if Element then
-        pcall(function()
-            if type(Element.SetText) == "function" then Element:SetText(Title) end
-        end)
-    end
     Registry[Key] = { Kind = "input", Default = Default, Callback = Callback, Element = Element }
     return Element
 end
@@ -1177,15 +1158,17 @@ local function AddButton(Tab, Title, Callback)
     pcall(function()
         if not Sec then return end
         if type(Sec.AddButton) == "function" then
-            local ok1 = pcall(function()
-                Sec:AddButton({ Text = Title, Func = Callback })
+            -- Obsidian: can be AddButton(info) or AddButton(text, callback)
+            local ok = pcall(function()
+                Sec:AddButton({ Text = tostring(Title), Func = Callback })
             end)
-            if ok1 then return end
-            pcall(function()
-                Sec:AddButton({ Name = Title, Text = Title, Title = Title, Callback = Callback, Func = Callback })
-            end)
+            if not ok then
+                pcall(function()
+                    Sec:AddButton(tostring(Title), Callback)
+                end)
+            end
         elseif type(Sec.Button) == "function" then
-            Sec:Button({ Title = Title, Name = Title, Text = Title, Callback = Callback })
+            Sec:Button({ Title = tostring(Title), Callback = Callback })
         end
     end)
 end
@@ -1435,518 +1418,422 @@ function SA.AddUI(Tab, Aim, Key, Label)
     end)
 end
 
--- auto block
+-- auto block (Nightsaken v65.9 sound+anim → hitbox visual, adapted into Flex Saken)
 
--- JJ1-style positional hitbox gate for original auto block
-local JHB = {
-    Enabled      = false,
-    ShowVisual   = true,
-    GlowMode     = true,
-    Width        = 8,
-    Height       = 7,
-    Depth        = 12,
-    Distance     = 0.01,
-    Color        = Color3.fromRGB(0, 255, 0),
-    Transparency = 0.5,
-    -- internal: persistent visual part per killer
-    _parts       = {},  -- [killerModel] = Part
-}
-
--- Returns true if LocalRoot is inside the OBB placed in front of the killer's HRP.
--- Mirrors the DuckHub deobfuscated logic exactly.
-local function JHB_IsInside(killerHRP)
-    if not killerHRP or not LocalRoot then return false end
-    -- fast pre-check: skip if too far away
-    local maxReach = JHB.Depth + JHB.Distance + 3
-    if (LocalRoot.Position - killerHRP.Position).Magnitude > maxReach then
-        return false
-    end
-    -- build box CFrame: origin is behind killer's forward face
-    local offset    = -(JHB.Depth / 2) - JHB.Distance
-    local boxCF     = killerHRP.CFrame * CFrame.new(0, 0, offset)
-    -- transform LocalRoot into box-local space
-    local localPos  = boxCF:ToObjectSpace(LocalRoot.CFrame).Position
-    local halfW     = JHB.Width  / 2
-    local halfH     = JHB.Height / 2
-    local halfD     = (JHB.Depth / 2)
-    return  math.abs(localPos.X) <= halfW
-        and math.abs(localPos.Y) <= halfH
-        and math.abs(localPos.Z) <= halfD
-end
-
-local function JHB_Cleanup(killer)
-    local p = JHB._parts[killer]
-    if p and p.Parent then p:Destroy() end
-    JHB._parts[killer] = nil
-end
-
-local function JHB_CleanupAll()
-    for killer in pairs(JHB._parts) do JHB_Cleanup(killer) end
-end
-
--- Standalone RenderStepped loop — runs regardless of when killers joined,
--- finds all killers in workspace every frame and maintains one Part per killer.
-RunService.RenderStepped:Connect(function()
-    if not JHB.Enabled or not JHB.ShowVisual then
-        JHB_CleanupAll()
-        return
-    end
-
-    -- collect active killers from workspace
-    local activeKillers = {}
-    local killersFolder = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild("Killers")
-    if killersFolder then
-        for _, m in ipairs(killersFolder:GetChildren()) do
-            if m:IsA("Model") then
-                activeKillers[m] = true
-            end
-        end
-    end
-
-    -- clean up parts for killers that left
-    for killer in pairs(JHB._parts) do
-        if not activeKillers[killer] then JHB_Cleanup(killer) end
-    end
-
-    -- update/create for active killers
-    for killer in pairs(activeKillers) do
-        local killerHRP = killer:FindFirstChild("HumanoidRootPart")
-        if not killerHRP then JHB_Cleanup(killer); continue end
-
-        local offset = -(JHB.Depth / 2) - JHB.Distance
-        local targetCF = killerHRP.CFrame * CFrame.new(0, 0, offset)
-        local size     = Vector3.new(JHB.Width, JHB.Height, JHB.Depth)
-
-        local p = JHB._parts[killer]
-        if not p or not p.Parent then
-            -- create fresh anchored part — anchored = true so we set CFrame directly each frame
-            p = Instance.new("Part")
-            p.Name         = "JHB_HitboxVisual"
-            p.Anchored     = true
-            p.CanCollide   = false
-            p.CanTouch     = false
-            p.CanQuery     = false
-            p.CastShadow   = false
-            p.Size         = size
-            p.Color        = JHB.Color
-            p.Transparency = JHB.Transparency
-            p.Material     = JHB.GlowMode and Enum.Material.ForceField or Enum.Material.SmoothPlastic
-            p.CFrame       = targetCF
-            p.Parent       = workspace
-            local sb = Instance.new("SelectionBox")
-            sb.Adornee       = p
-            sb.Color3        = JHB.Color
-            sb.LineThickness = 0.04
-            sb.Transparency  = 0.1
-            sb.Visible       = true
-            sb.Parent        = p
-            JHB._parts[killer] = p
-        end
-
-        -- update every frame so it tracks the killer exactly
-        p.Size         = size
-        p.Color        = JHB.Color
-        p.Transparency = JHB.Transparency
-        p.Material     = JHB.GlowMode and Enum.Material.ForceField or Enum.Material.SmoothPlastic
-        p.CFrame       = targetCF
-        local sb = p:FindFirstChildOfClass("SelectionBox")
-        if sb then sb.Color3 = JHB.Color end
-    end
-end)
-
--- VC (Facing Vision Cone) state is declared here so that VC_IsPlayerInCone,
--- which lives inside the auto-block do-block below, can reference it.
--- The visual cone parts and the heartbeat connection are set up later (after
--- the UI tabs are built) but the table itself must exist first.
+-- Keep VC for UI Strict Visual / Show Vision Cone (optional gate)
 local VC = {}
-VC.enabled = false   -- toggled by "Show Vision Cone" toggle
-VC.range   = 13.5    -- studs – default matches UI slider default
-VC.angle   = 85      -- degrees – default matches UI slider default
--- Part handles and heartbeat are nil until VC_Start() is called
+VC.enabled = false
+VC.range   = 13.5
+VC.angle   = 85
 VC.tipBall   = nil; VC.leftBall  = nil; VC.rightBall = nil
 VC.leftRay   = nil; VC.rightRay  = nil
 VC.leftArc   = nil; VC.rightArc  = nil
 VC.heartbeat = nil
 
-local VisualCheckBeam, HitboxFolder, SetAutoBlock, UpdateDiamondZoneVisibility -- UpdateDiamondZoneVisibility is a no-op stub
-do
--- animation-only trigger — sound hook removed
-local AttackAnimations = IdSet({
-    -- updated animation IDs
-    "104625283622511","105316545074913","105458270463374","105658601731267","106427068964975",
-    "106538427162796","106774825859733","106860049270347","108196996477620","109246041199659",
-    "109572851772132","109667959938617","110153465553223","112609100667470","113041754598835",
-    "114126519127454","114266653674439","114348932845243","114506382930939","116107946837042",
-    "116618003477002","117384979233854","118298475669935","120059928759346","120112897026015",
-    "120161287604619","120950360130737","121080480916189","121293883585738","121858217776572",
-    "12222208","122709416391891","123172382755876","123556520269026","124269076578545",
-    "124523003071322","124705663396411","125403313786645","126038164510727","126131675979001",
-    "126171487400618","126830014841198","127154365553241","127245564598429","128137868531863",
-    "129260077168659","129405885079224","129638875679599","129853747901446","129921445546291",
-    "130321333480982","130812999515723","130958529065375","133509103047518","134720314512566",
-    "134815821722409","135372846369700","135853087227453","136472776382806","138547840635558",
-    "138938529389204","139688966958293","18885909645","70371667919898","70785407091644",
-    "70948173568515","73248483552036","74707328554358","77375846492436","80073963691293",
-    "80277760801310","80540530406270","81299297965542","81362825527808","82336352305186",
-    "82843272472677","83829782357897","84069821282466","84116622032112","87294535821555",
-    "87989533095285","88451353906104","88970503168421","90289023448875","90620531468240",
-    "91509234639766","91775720375859","92567970681901","93069721274110","93366464803829",
-    "94958041603347","95216132788412","96587400766332","99824350842479","99829427721752",
-})
-local PunchAnimations = IdSet({"87259391926321","140703210927645","136007065400978","129843313690921","86709774283672","108807732150251","138040001965654","86096387000557","144729402831182","149382754027381","152406193748293","155783209463712"})
+-- JJ1-style positional hitbox gate UI state (maps into NS hitbox config)
+local JHB = {
+    Enabled      = false,
+    ShowVisual   = true,
+    GlowMode     = true,
+    Width        = 6,
+    Height       = 6,
+    Depth        = 9,
+    Distance     = 3,
+    Color        = Color3.fromRGB(255, 255, 255),
+    Transparency = 0.8,
+    _parts       = {},
+}
+local function JHB_Cleanup(killer) end
+local function JHB_CleanupAll() end
+local function JHB_IsInside(killerHRP)
+    return true -- NS owns positional check via GetPartsInPart
+end
 
-local LastBlock = 0
-
+local VisualCheckBeam, HitboxFolder, SetAutoBlock, UpdateDiamondZoneVisibility
 VisualCheckBeam = Instance.new("Part")
-VisualCheckBeam.Name         = "FlexVisualCheckBeam"
-VisualCheckBeam.Anchored     = true
-VisualCheckBeam.CanCollide   = false
-VisualCheckBeam.CanQuery     = false
-VisualCheckBeam.CanTouch     = false
+VisualCheckBeam.Name = "FlexVisualCheckBeam"
+VisualCheckBeam.Anchored = true
+VisualCheckBeam.CanCollide = false
+VisualCheckBeam.CanQuery = false
+VisualCheckBeam.CanTouch = false
 VisualCheckBeam.Transparency = 1
-VisualCheckBeam.Parent       = workspace
-local beamAtt0 = Instance.new("Attachment"); local beamAtt1 = Instance.new("Attachment")
-beamAtt0.Parent = LocalRoot or VisualCheckBeam; beamAtt1.Parent = VisualCheckBeam
-local VisualBeam = Instance.new("Beam")
-VisualBeam.Attachment0  = beamAtt0; VisualBeam.Attachment1 = beamAtt1
-VisualBeam.Width0       = 0.05; VisualBeam.Width1 = 0.05
-VisualBeam.FaceCamera   = true; VisualBeam.LightEmission = 1
-VisualBeam.Color        = ColorSequence.new(Color3.fromRGB(220, 20, 60))
-VisualBeam.Enabled      = false; VisualBeam.Parent = VisualCheckBeam
+VisualCheckBeam.Parent = workspace
+HitboxFolder = Instance.new("Folder")
+HitboxFolder.Name = "FlexSakenHitboxes"
+HitboxFolder.Parent = workspace
 
-local DragToken = 0
-local function DragToward(KillerRoot)
-    if not State.HitboxDrag or not LocalRoot or not KillerRoot then return end
-    local Distance = (KillerRoot.Position - LocalRoot.Position).Magnitude
-    if Distance > (State.HitboxDragRange or 30) then return end
-    DragToken += 1; local MyToken = DragToken; local Speed = State.DragSpeed or 14
-    local Start = os.clock(); local Duration = 0.35
-    task.spawn(function()
-        while MyToken == DragToken and os.clock() - Start < Duration do
-            local Delta = RunService.Heartbeat:Wait()
-            if not LocalRoot or not KillerRoot.Parent or not LocalHumanoid then break end
-            local Direction = KillerRoot.Position - LocalRoot.Position
-            Direction = Vector3.new(Direction.X, 0, Direction.Z)
-            if Direction.Magnitude <= 3 then break end
-            local Ramp = math.sin(math.pi * (os.clock() - Start) / Duration)
-            LocalHumanoid:Move(Direction.Unit, false)
-            LocalRoot.CFrame = LocalRoot.CFrame + Direction.Unit * Speed * Ramp * Delta
-            LocalRoot.CFrame = CFrame.lookAt(LocalRoot.Position, LocalRoot.Position + Direction.Unit)
+do
+    local NS_AB = {
+        AutoBlock = false,
+        HitboxTransparency = 0.8,
+        HitboxColor = Color3.fromRGB(255,255,255),
+        HitboxHitColor = Color3.fromRGB(0,255,0),
+        HitboxDistance = 3,
+        ShowOutline = true,
+        ShowHitboxVisual = true,
+        OutlineThickness = 0.04,
+        OutlineTransparencyValue = 0.6,
+        HitboxWidth = 6,
+        HitboxLength = 9,
+        HitboxHeight = 6,
+        HitboxMultiplier = 1,
+        DEBUG = false,
+    }
+
+    local KILLER_HITBOX = {
+        ["CoolKid"]   = { dura = 0.05, life = 0.05, width = 5, length = 7, height = 6 },
+        ["Slasher"]   = { dura = 0.35, life = 0.35 },
+        ["1x1x1x1"]   = { dura = 0.45, life = 0.45 },
+        ["JohnDoe"]   = { dura = 0.45, life = 0.45 },
+        ["John Doe"]  = { dura = 0.45, life = 0.45 },
+        ["Nosferatu"] = { dura = 0.42, life = 0.42 },
+        ["Sixer"]     = { dura = 0.42, life = 0.42, distance = 6.0 },
+        ["Noli"]      = { dura = 0.37, life = 0.37 },
+        ["Azure"]     = { dura = 0.35, life = 0.35 },
+    }
+    local DEFAULT_HITBOX = { dura = 0.26, life = 0.26 }
+
+    local function getKillerHitbox(killerName)
+        if not killerName then return DEFAULT_HITBOX end
+        for name, val in pairs(KILLER_HITBOX) do
+            if string.find(killerName, name, 1, true) then return val end
         end
-        if LocalHumanoid and State.AutoBlock then LocalHumanoid:Move(Vector3.zero, false) end
-    end)
-end
-
--- Standalone block-cooldown check.
--- Tries several GUI paths; if none resolve, defaults to TRUE (allow block)
--- so a missing/renamed GUI element never silently kills auto block.
-local function CanUseBlockNow()
-    -- Path 1: Clipping frame scale (most reliable when present)
-    local ok, clip = pcall(function()
-        local gui = LocalPlayer.PlayerGui
-        -- Try both common container names
-        local container = gui:FindFirstChild("MainUI") and gui.MainUI:FindFirstChild("AbilityContainer")
-            or gui:FindFirstChild("AbilityContainer")
-        if not container then return nil end
-        local btn = container:FindFirstChild("Block"); if not btn then return nil end
-        return btn:FindFirstChild("Clipping") or btn:FindFirstChild("CooldownClip")
-    end)
-    if ok and clip then
-        local sy = clip.Size.Y.Scale
-        if sy >= 0.95 or clip.Size == UDim2.new(1,0,1,0) then return true end
-        if sy <= 0.01 then return false end
-        return true
+        return DEFAULT_HITBOX
     end
-    -- Path 2: NumberValue cooldown
-    local ok2, btn = pcall(function()
-        local gui = LocalPlayer.PlayerGui
-        local container = gui:FindFirstChild("MainUI") and gui.MainUI:FindFirstChild("AbilityContainer")
-            or gui:FindFirstChild("AbilityContainer")
-        return container and container:FindFirstChild("Block")
-    end)
-    if ok2 and btn then
-        local cd = btn:FindFirstChild("CooldownTime") or btn:FindFirstChild("Cooldown")
-            or btn:FindFirstChildWhichIsA("NumberValue")
-        if cd and type(cd.Value) == "number" then return cd.Value <= 0.05 end
-        -- Helpless attribute/child check
-        if btn:FindFirstChild("Helpless") or btn:GetAttribute("Helpless") then return false end
-        return true
-    end
-    -- Fallback: GUI path not found — allow block rather than silently block it
-    return true
-end
 
-local function DoBlock(KillerRoot)
-    if os.clock() - LastBlock < 0.01 then return end
-    -- Don't drag if the block ability is still on cooldown
-    if not CanUseBlockNow() then return end
-    LastBlock = os.clock()
-    if State.HitboxDrag and KillerRoot then DragToward(KillerRoot) end
-    local Delay = (State.BlockDelay or 0) / 1000
-    if Delay > 0 then
-        task.delay(Delay, function()
-            if LocalRoot and LocalCharacter and LocalCharacter.Parent then FireAbility("Block") end
+    local function log(msg)
+        if NS_AB.DEBUG then warn("[FlexSaken-AB] " .. tostring(msg)) end
+    end
+
+    local function fireBlockNS()
+        -- Prefer Flex FireAbility path; also try NS buffer format
+        pcall(function() FireAbility("Block") end)
+        pcall(function()
+            if not Remote then return end
+            Remote:FireServer(unpack({"UseActorAbility", {buffer.fromstring("\003\005\000\000\000Block")}}))
         end)
-    else FireAbility("Block") end
-end
-
-local BlockWatchers = {}
-HitboxFolder = Instance.new("Folder"); HitboxFolder.Name = "FlexSakenHitboxes"; HitboxFolder.Parent = workspace
-local CustomHitboxSize   = Vector3.new(5.2, 6, 5.65)
-local CustomHitboxOffset = CFrame.new(0, 0, -3.5)
-
--- cached once, reused every poll — avoids per-call allocation
-local _HitParams = OverlapParams.new()
-_HitParams.MaxParts           = 1
-_HitParams.BruteForceAllSlow  = true
-
-local function GetLocalQueryHitbox()
-    if not LocalCharacter then return nil end
-    return LocalCharacter:FindFirstChild("QueryHitbox")
-end
-
--- Returns true if the local player is inside the killer's facing vision cone.
--- Gates blocking when EITHER "Show Vision Cone" (VC.enabled) OR
--- "Strict Visual Check" (State.StrictVisualCheck) is active.
--- Both share the same VC.range / VC.angle values so the visual cone and the
--- block gate are always in sync.  When neither is on, blocking is unrestricted.
-local function VC_IsPlayerInCone(Killer)
-    if not VC.enabled and not State.StrictVisualCheck then return true end
-    local killerHRP = Killer and Killer:FindFirstChild("HumanoidRootPart")
-    if not killerHRP or not LocalRoot then return false end
-    local origin   = killerHRP.Position
-    local myPos    = LocalRoot.Position
-    local lv       = killerHRP.CFrame.LookVector
-    local flat     = Vector3.new(lv.X, 0, lv.Z)
-    if flat.Magnitude < 0.01 then return false end
-    flat = flat.Unit
-    local toMe     = Vector3.new(myPos.X - origin.X, 0, myPos.Z - origin.Z)
-    local dist     = toMe.Magnitude
-    if dist > VC.range or dist < 0.01 then return false end
-    local halfAng  = math.rad(VC.angle / 2)
-    return toMe.Unit:Dot(flat) >= math.cos(halfAng)
-end
-
-local function TriggerBlockWithHitbox(Killer, QueryHitbox)
-    if not State.AutoBlock or not LocalRoot then return end
-    -- Vision cone gate
-    if not VC_IsPlayerInCone(Killer) then return end
-    -- JHB positional hitbox gate: if enabled, only block when inside the killer's OBB
-    if JHB.Enabled then
-        local killerHRP = Killer and Killer:FindFirstChild("HumanoidRootPart")
-        if not killerHRP or not JHB_IsInside(killerHRP) then return end
+        return true
     end
-    local LocalQuery = GetLocalQueryHitbox(); if not LocalQuery then return end
-    _HitParams.FilterType                  = Enum.RaycastFilterType.Include
-    _HitParams.FilterDescendantsInstances  = { LocalQuery }
-    local boxSize = CustomHitboxSize * 2.2
-    -- poll every rendered frame instead of every 20 ms — fires as early as possible
-    for i = 1, 25 do
-        if not State.AutoBlock or not QueryHitbox.Parent then break end
-        if not VC_IsPlayerInCone(Killer) then break end
+
+    local function makeHitboxAndCheck(killerModel, onDetected)
+        if not killerModel or not killerModel.Parent then return end
+        local killerRoot = killerModel:FindFirstChild("HumanoidRootPart") or killerModel:FindFirstChild("RootPart")
+        if not killerRoot then return end
+        local hbCfg = getKillerHitbox(killerModel.Name)
+        local m = NS_AB.HitboxMultiplier or 1
+        local hbWidth = hbCfg.width or NS_AB.HitboxWidth
+        local hbLength = hbCfg.length or NS_AB.HitboxLength
+        local hbHeight = hbCfg.height or NS_AB.HitboxHeight
+        -- UI JHB overrides when enabled
         if JHB.Enabled then
-            local killerHRP = Killer and Killer:FindFirstChild("HumanoidRootPart")
-            if not killerHRP or not JHB_IsInside(killerHRP) then break end
+            hbWidth = JHB.Width
+            hbHeight = JHB.Height
+            hbLength = JHB.Depth
         end
-        local boxCFrame = QueryHitbox.CFrame * CustomHitboxOffset
-        local Hit = workspace:GetPartBoundsInBox(boxCFrame, boxSize, _HitParams)
-        if #Hit > 0 then DoBlock(QueryHitbox); break end
-        RunService.RenderStepped:Wait()
+        local size = Vector3.new(hbWidth*m, hbHeight*m, hbLength*m)
+        local op = OverlapParams.new()
+        op.FilterType = Enum.RaycastFilterType.Exclude
+        op.FilterDescendantsInstances = {killerModel}
+        task.spawn(function()
+            local startTime = tick()
+            local blockedOnce = false
+            local showVis = NS_AB.ShowHitboxVisual
+            if JHB.Enabled then showVis = JHB.ShowVisual end
+            local dist = hbCfg.distance or NS_AB.HitboxDistance or 3
+            if JHB.Enabled then dist = JHB.Distance end
+            local color = NS_AB.HitboxColor
+            if JHB.Enabled then color = JHB.Color end
+            local trans = NS_AB.HitboxTransparency
+            if JHB.Enabled then trans = JHB.Transparency end
+            while tick() - startTime < hbCfg.dura do
+                if blockedOnce then break end
+                if not State.AutoBlock then break end
+                local ckr = killerModel:FindFirstChild("HumanoidRootPart") or killerModel:FindFirstChild("RootPart")
+                if not ckr then break end
+                local frozenCFrame = ckr.CFrame * CFrame.new(0,0,-(dist))
+                local hb = Instance.new("Part")
+                hb.Name = "AutoBlockHitbox_Frame"
+                hb.Transparency = showVis and trans or 1
+                hb.CanCollide = false; hb.CanTouch = false; hb.CanQuery = false
+                hb.CastShadow = false; hb.Anchored = true
+                hb.Size = size; hb.Color = color
+                hb.Material = (JHB.Enabled and JHB.GlowMode) and Enum.Material.ForceField or Enum.Material.ForceField
+                hb.CFrame = frozenCFrame; hb.Parent = workspace
+                local sb
+                if NS_AB.ShowOutline and showVis then
+                    sb = Instance.new("SelectionBox")
+                    sb.Adornee = hb; sb.Color3 = color
+                    sb.LineThickness = NS_AB.OutlineThickness
+                    sb.Transparency = NS_AB.OutlineTransparencyValue or 0.6
+                    sb.Visible = true; sb.Parent = hb
+                end
+                pcall(function() game:GetService("Debris"):AddItem(hb, hbCfg.life) end)
+                local found = false
+                for _, part in ipairs(workspace:GetPartsInPart(hb, op)) do
+                    local char = part.Parent
+                    local hum = char and char:FindFirstChildOfClass("Humanoid")
+                    if hum and hum.Health > 0 and Players:GetPlayerFromCharacter(char) == LocalPlayer then
+                        found = true; break
+                    end
+                    if LocalCharacter and (part:IsDescendantOf(LocalCharacter) or char == LocalCharacter) then
+                        found = true; break
+                    end
+                end
+                if found and not blockedOnce then
+                    blockedOnce = true
+                    pcall(function()
+                        hb.Color = NS_AB.HitboxHitColor
+                        if sb then sb.Color3 = NS_AB.HitboxHitColor end
+                    end)
+                    fireBlockNS()
+                    if onDetected then onDetected() end
+                    break
+                end
+                RunService.Heartbeat:Wait()
+            end
+        end)
     end
-end
 
-local function WatchKiller(Killer)
-    if BlockWatchers[Killer] then return end
-    -- Mark slot immediately so concurrent spawns don't double-hook
-    BlockWatchers[Killer] = true
+    local _ab_seen = {}
+    local _ab_hooked = {}
+    local _ab_active = false
 
-    local Humanoid = Killer:FindFirstChildOfClass("Humanoid") or Killer:WaitForChild("Humanoid", 5)
-    if not Humanoid then BlockWatchers[Killer] = nil; return end
+    local _ab_soundIDs = {
+        ["rbxassetid://101199185291628"]=true,["rbxassetid://101553872555606"]=true,["rbxassetid://101698569375359"]=true,
+        ["rbxassetid://104910828105172"]=true,["rbxassetid://105204810054381"]=true,["rbxassetid://105516183226360"]=true,
+        ["rbxassetid://105840448036441"]=true,["rbxassetid://106836941416453"]=true,["rbxassetid://108610718831698"]=true,
+        ["rbxassetid://108651070773439"]=true,["rbxassetid://108907358619313"]=true,["rbxassetid://109348678063422"]=true,
+        ["rbxassetid://109570290393196"]=true,["rbxassetid://112809109188560"]=true,["rbxassetid://113413858159336"]=true,
+        ["rbxassetid://114742322778642"]=true,["rbxassetid://115026634746636"]=true,["rbxassetid://115678417928765"]=true,
+        ["rbxassetid://116468089135195"]=true,["rbxassetid://116581754553533"]=true,["rbxassetid://117173212095661"]=true,
+        ["rbxassetid://117231507259853"]=true,["rbxassetid://118562842802948"]=true,["rbxassetid://119583605486352"]=true,
+        ["rbxassetid://119664480754070"]=true,["rbxassetid://119942598489800"]=true,["rbxassetid://120749612844426"]=true,
+        ["rbxassetid://121954639447247"]=true,["rbxassetid://12222216"]=true,["rbxassetid://123497933758952"]=true,
+        ["rbxassetid://123835423223220"]=true,["rbxassetid://123923371062204"]=true,["rbxassetid://124234993291213"]=true,
+        ["rbxassetid://124903763333174"]=true,["rbxassetid://125213046326879"]=true,["rbxassetid://127557531826290"]=true,
+        ["rbxassetid://128195973631079"]=true,["rbxassetid://128367348686124"]=true,["rbxassetid://128856426573270"]=true,
+        ["rbxassetid://131123355704017"]=true,["rbxassetid://131406927389838"]=true,["rbxassetid://132581672170205"]=true,
+        ["rbxassetid://133709029886490"]=true,["rbxassetid://135319730390518"]=true,["rbxassetid://136323728355613"]=true,
+        ["rbxassetid://137809737339569"]=true,["rbxassetid://139996647355899"]=true,["rbxassetid://140242176732868"]=true,
+        ["rbxassetid://18511965048"]=true,["rbxassetid://70739368096233"]=true,["rbxassetid://71805956520207"]=true,
+        ["rbxassetid://73662192846371"]=true,["rbxassetid://74809026448465"]=true,["rbxassetid://74842815979546"]=true,
+        ["rbxassetid://75330693422988"]=true,["rbxassetid://77649238882198"]=true,["rbxassetid://79391273191671"]=true,
+        ["rbxassetid://79612713897495"]=true,["rbxassetid://79980897195554"]=true,["rbxassetid://80516583309685"]=true,
+        ["rbxassetid://82221759983649"]=true,["rbxassetid://84307400688050"]=true,["rbxassetid://85853080745515"]=true,
+        ["rbxassetid://86174610237192"]=true,["rbxassetid://88589682639517"]=true,["rbxassetid://89004992452376"]=true,
+        ["rbxassetid://92869747208256"]=true,["rbxassetid://93299090238530"]=true,["rbxassetid://94317217837143"]=true,
+        ["rbxassetid://94632255644411"]=true,["rbxassetid://95079963655241"]=true,["rbxassetid://96117920303138"]=true,
+        ["rbxassetid://96594507550917"]=true,["rbxassetid://98111231282218"]=true,["rbxassetid://98675142200448"]=true,
+        ["rbxassetid://98733709078792"]=true,["rbxassetid://98742773509325"]=true,["rbxassetid://99215225043220"]=true,
+        ["rbxassetid://99856718263455"]=true,
+        ["rbxassetid://100600301396617"]=true,["rbxassetid://105207247877248"]=true,["rbxassetid://107345261604889"]=true,
+        ["rbxassetid://107401225947000"]=true,["rbxassetid://108360420637223"]=true,["rbxassetid://111295935549452"]=true,
+        ["rbxassetid://114481520550129"]=true,["rbxassetid://115343460993527"]=true,["rbxassetid://121853342688333"]=true,
+        ["rbxassetid://12222208"]=true,["rbxassetid://122398404613193"]=true,["rbxassetid://126469686116453"]=true,
+        ["rbxassetid://132160759837000"]=true,["rbxassetid://134720314512566"]=true,["rbxassetid://135256560060972"]=true,
+        ["rbxassetid://138047522440301"]=true,["rbxassetid://70626755789950"]=true,["rbxassetid://72085713525541"]=true,
+        ["rbxassetid://82843272472677"]=true,["rbxassetid://86506028049034"]=true,["rbxassetid://94273783714662"]=true,
+        ["rbxassetid://95863147467940"]=true,["rbxassetid://98866992038428"]=true,["rbxassetid://99918466107008"]=true,
+    }
 
-    -- QueryHitbox may appear late; try FindFirstChild first, then wait up to 8s
-    local QueryHitbox = Killer:FindFirstChild("QueryHitbox")
-    if not QueryHitbox then
-        QueryHitbox = Killer:WaitForChild("QueryHitbox", 8)
+    local _ab_animIDs = {
+        ["rbxassetid://104625283622511"]=true,["rbxassetid://105316545074913"]=true,["rbxassetid://105458270463374"]=true,
+        ["rbxassetid://105658601731267"]=true,["rbxassetid://106427068964975"]=true,["rbxassetid://106538427162796"]=true,
+        ["rbxassetid://106774825859733"]=true,["rbxassetid://106860049270347"]=true,["rbxassetid://108196996477620"]=true,
+        ["rbxassetid://109246041199659"]=true,["rbxassetid://109572851772132"]=true,["rbxassetid://109667959938617"]=true,
+        ["rbxassetid://110153465553223"]=true,["rbxassetid://112609100667470"]=true,["rbxassetid://113041754598835"]=true,
+        ["rbxassetid://114126519127454"]=true,["rbxassetid://114266653674439"]=true,["rbxassetid://114348932845243"]=true,
+        ["rbxassetid://114506382930939"]=true,["rbxassetid://116107946837042"]=true,["rbxassetid://116618003477002"]=true,
+        ["rbxassetid://117384979233854"]=true,["rbxassetid://118298475669935"]=true,["rbxassetid://120059928759346"]=true,
+        ["rbxassetid://120112897026015"]=true,["rbxassetid://120161287604619"]=true,["rbxassetid://120950360130737"]=true,
+        ["rbxassetid://121080480916189"]=true,["rbxassetid://121293883585738"]=true,["rbxassetid://121858217776572"]=true,
+        ["rbxassetid://12222208"]=true,["rbxassetid://122709416391891"]=true,["rbxassetid://123172382755876"]=true,
+        ["rbxassetid://123556520269026"]=true,["rbxassetid://124269076578545"]=true,["rbxassetid://124523003071322"]=true,
+        ["rbxassetid://124705663396411"]=true,["rbxassetid://125403313786645"]=true,["rbxassetid://126038164510727"]=true,
+        ["rbxassetid://126131675979001"]=true,["rbxassetid://126171487400618"]=true,["rbxassetid://126830014841198"]=true,
+        ["rbxassetid://127154365553241"]=true,["rbxassetid://127245564598429"]=true,["rbxassetid://128137868531863"]=true,
+        ["rbxassetid://129260077168659"]=true,["rbxassetid://129405885079224"]=true,["rbxassetid://129638875679599"]=true,
+        ["rbxassetid://129853747901446"]=true,["rbxassetid://129921445546291"]=true,["rbxassetid://130321333480982"]=true,
+        ["rbxassetid://130812999515723"]=true,["rbxassetid://130958529065375"]=true,["rbxassetid://133509103047518"]=true,
+        ["rbxassetid://134720314512566"]=true,["rbxassetid://134815821722409"]=true,["rbxassetid://135372846369700"]=true,
+        ["rbxassetid://135853087227453"]=true,["rbxassetid://136472776382806"]=true,["rbxassetid://138547840635558"]=true,
+        ["rbxassetid://138938529389204"]=true,["rbxassetid://139688966958293"]=true,["rbxassetid://18885909645"]=true,
+        ["rbxassetid://70371667919898"]=true,["rbxassetid://70785407091644"]=true,["rbxassetid://70948173568515"]=true,
+        ["rbxassetid://73248483552036"]=true,["rbxassetid://74707328554358"]=true,["rbxassetid://77375846492436"]=true,
+        ["rbxassetid://80073963691293"]=true,["rbxassetid://80277760801310"]=true,["rbxassetid://80540530406270"]=true,
+        ["rbxassetid://81299297965542"]=true,["rbxassetid://81362825527808"]=true,["rbxassetid://82336352305186"]=true,
+        ["rbxassetid://82843272472677"]=true,["rbxassetid://83829782357897"]=true,["rbxassetid://84069821282466"]=true,
+        ["rbxassetid://84116622032112"]=true,["rbxassetid://87294535821555"]=true,["rbxassetid://87989533095285"]=true,
+        ["rbxassetid://88451353906104"]=true,["rbxassetid://88970503168421"]=true,["rbxassetid://90289023448875"]=true,
+        ["rbxassetid://90620531468240"]=true,["rbxassetid://91509234639766"]=true,["rbxassetid://91775720375859"]=true,
+        ["rbxassetid://92567970681901"]=true,["rbxassetid://93069721274110"]=true,["rbxassetid://93366464803829"]=true,
+        ["rbxassetid://94958041603347"]=true,["rbxassetid://95216132788412"]=true,["rbxassetid://96587400766332"]=true,
+        ["rbxassetid://99824350842479"]=true,["rbxassetid://99829427721752"]=true,
+    }
+
+    local function _ab_isMe(m)
+        return m and (Players:GetPlayerFromCharacter(m) == LocalPlayer or m.Name == LocalPlayer.Name)
     end
-    -- If still nil the killer has no hitbox (lobby model etc.) — bail cleanly
-    if not QueryHitbox then BlockWatchers[Killer] = nil; return end
 
-    local Connections = {}
+    local function _ab_trigger(model)
+        if not _ab_active or not State.AutoBlock then return end
+        if not model or not model.Parent or _ab_isMe(model) then return end
+        if _ab_seen[model] and os.clock() < _ab_seen[model] then return end
+        _ab_seen[model] = os.clock() + 0.05
+        makeHitboxAndCheck(model, function() fireBlockNS() end)
+    end
 
-    local function Trigger()
-        if not State.AutoBlock then return end
-        if not QueryHitbox or not QueryHitbox.Parent then return end
-        if not VC_IsPlayerInCone(Killer) then return end
-        -- JHB gate: if the hitbox feature is on, only block when the player
-        -- is inside the killer's OBB. Animation alone is not enough.
-        if JHB.Enabled then
-            local killerHRP = Killer and Killer:FindFirstChild("HumanoidRootPart")
-            if not killerHRP or not JHB_IsInside(killerHRP) then return end
+    local function _ab_hookSound(snd, model)
+        if not snd or not snd:IsA("Sound") or _ab_hooked[snd] then return end
+        _ab_hooked[snd] = true
+        snd.Played:Connect(function()
+            if not _ab_active or not State.AutoBlock then return end
+            if not _ab_soundIDs[snd.SoundId] then return end
+            local m = model or snd:FindFirstAncestorOfClass("Model")
+            _ab_trigger(m)
+        end)
+    end
+
+    local function _ab_hookAnim(model)
+        if not model or _ab_isMe(model) then return end
+        task.spawn(function()
+            local hum = model:WaitForChild("Humanoid", 5); if not hum then return end
+            local an = hum:FindFirstChildOfClass("Animator") or hum
+            an.AnimationPlayed:Connect(function(tr)
+                if not _ab_active or not State.AutoBlock or not tr.Animation then return end
+                if not _ab_animIDs[tr.Animation.AnimationId] then return end
+                _ab_trigger(model)
+            end)
+        end)
+    end
+
+    local function _ab_hookModel(m)
+        if not m or not m:IsA("Model") or _ab_isMe(m) then return end
+        for _, d in ipairs(m:GetDescendants()) do
+            if d:IsA("Sound") then pcall(_ab_hookSound, d, m) end
         end
-        DoBlock(QueryHitbox)
+        m.DescendantAdded:Connect(function(d)
+            if d:IsA("Sound") and not _ab_isMe(m) then pcall(_ab_hookSound, d, m) end
+        end)
+        _ab_hookAnim(m)
     end
 
-    -- animation-only hook
-    local function HookAnimator(Anim)
-        if not Anim then return end
-        table.insert(Connections, Anim.AnimationPlayed:Connect(function(Track)
-            if not State.AutoBlock or not Track or not Track.Animation then return end
-            local AnimId = tostring(Track.Animation.AnimationId or ""):match("%d+")
-            if AnimId and AttackAnimations["rbxassetid://" .. AnimId] then Trigger() end
-        end))
-    end
-
-    local Animator = Humanoid:FindFirstChildOfClass("Animator")
-    if not Animator then
-        for _, d in Killer:GetDescendants() do
-            if d:IsA("Animator") then Animator = d; break end
-        end
-    end
-    HookAnimator(Animator)
-
-    table.insert(Connections, Killer.DescendantAdded:Connect(function(Descendant)
-        if Descendant:IsA("Animator") and not Animator then
-            Animator = Descendant; HookAnimator(Animator)
-        end
-        if Descendant.Name == "QueryHitbox" and Descendant:IsA("BasePart") then
-            QueryHitbox = Descendant
-        end
-    end))
-
-    table.insert(Connections, Killer.AncestryChanged:Connect(function(_, Parent)
-        if not Parent then
-            JHB_Cleanup(Killer)
-            for _, c in Connections do pcall(c.Disconnect, c) end
-            table.clear(Connections); BlockWatchers[Killer] = nil
-        end
-    end))
-
-    BlockWatchers[Killer] = function()
-        for _, c in Connections do pcall(c.Disconnect, c) end
-        table.clear(Connections); BlockWatchers[Killer] = nil
-    end
-end
-
-local KillerAddedConnection
-function SetAutoBlock(Enabled)
-    State.AutoBlock = Enabled
-    if Enabled then
+    local function _ab_start()
+        if _ab_active then return end
+        _ab_active = true
         RefreshFolders()
-        if not KillersFolder then
-            -- Killers folder not found yet — retry in background until it appears
+        local kf = KillersFolder or (workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild("Killers"))
+        if not kf then
             task.spawn(function()
                 for _ = 1, 20 do
                     task.wait(1)
                     RefreshFolders()
-                    if KillersFolder then break end
+                    kf = KillersFolder
+                    if kf then break end
                 end
-                if not KillersFolder or not State.AutoBlock then return end
-                for _, Killer in KillersFolder:GetChildren() do task.spawn(WatchKiller, Killer) end
-                if not KillerAddedConnection then
-                    KillerAddedConnection = KillersFolder.ChildAdded:Connect(function(Killer)
-                        if State.AutoBlock then task.spawn(WatchKiller, Killer) end
-                    end)
+                if not kf or not State.AutoBlock then return end
+                for _, c in ipairs(kf:GetChildren()) do
+                    if c:IsA("Model") then pcall(_ab_hookModel, c) end
                 end
+                kf.ChildAdded:Connect(function(c)
+                    if c:IsA("Model") and State.AutoBlock then pcall(_ab_hookModel, c) end
+                end)
             end)
+            log("AutoBlock ON (waiting for Killers folder)")
             return
         end
-        for _, Killer in KillersFolder:GetChildren() do task.spawn(WatchKiller, Killer) end
-        if not KillerAddedConnection then
-            KillerAddedConnection = KillersFolder.ChildAdded:Connect(function(Killer)
-                if State.AutoBlock then task.spawn(WatchKiller, Killer) end
-            end)
+        for _, c in ipairs(kf:GetChildren()) do
+            if c:IsA("Model") then pcall(_ab_hookModel, c) end
         end
-    else
-        if KillerAddedConnection then KillerAddedConnection:Disconnect(); KillerAddedConnection = nil end
-        for _, Stop in pairs(BlockWatchers) do pcall(Stop) end; table.clear(BlockWatchers)
+        kf.ChildAdded:Connect(function(c)
+            if c:IsA("Model") and State.AutoBlock then pcall(_ab_hookModel, c) end
+        end)
+        log("AutoBlock ON (sound + anim → hitbox)")
     end
-end
 
-local _visualTick = 0
-RunService.Heartbeat:Connect(function()
-    _visualTick += 1
-    if _visualTick < 5 then return end
-    _visualTick = 0
-    -- Beam visual: show when StrictVisualCheck is on (VC visual cone handles its
-    -- own rendering separately via VC_Update / VC_Start).
-    if State.StrictVisualCheck and LocalRoot and KillersFolder then
-        -- Use VC.range so the beam only draws to killers within cone range.
-        local Killer = GetClosestKiller(VC.range)
-        if Killer then
-            local krp = Killer:FindFirstChild("HumanoidRootPart")
-            if krp then
-                if beamAtt0.Parent ~= LocalRoot then beamAtt0.Parent = LocalRoot end
-                if beamAtt1.Parent ~= krp then beamAtt1.Parent = krp end
-                -- Use the same dot-product threshold as VC_IsPlayerInCone
-                local Look  = Vector3.new(krp.CFrame.LookVector.X, 0, krp.CFrame.LookVector.Z)
-                local Offset = LocalRoot.Position - krp.Position
-                local ToMe  = Vector3.new(Offset.X, 0, Offset.Z)
-                local IsSeeing = false
-                if Look.Magnitude > 0.01 and ToMe.Magnitude > 0.01 then
-                    local halfAng = math.rad(VC.angle / 2)
-                    IsSeeing = Look.Unit:Dot(ToMe.Unit) >= math.cos(halfAng)
-                end
-                VisualBeam.Color   = ColorSequence.new(IsSeeing and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(220, 20, 60))
-                VisualBeam.Enabled = true
-            else VisualBeam.Enabled = false end
-        else VisualBeam.Enabled = false end
-    else VisualBeam.Enabled = false end
-end)
+    local function _ab_stop()
+        _ab_active = false
+        table.clear(_ab_seen)
+        log("AutoBlock OFF")
+    end
 
-local AimConnection
-local function StopAiming()
-    if AimConnection then AimConnection:Disconnect(); AimConnection = nil end
-end
-local function GetNearestHeavyRoot()
-    if not LocalRoot then return nil end
-    local Best; local BestDistance = math.huge
-    for _, Player in Players:GetPlayers() do
-        if Player ~= LocalPlayer and Player.Character then
-            local Humanoid = Player.Character:FindFirstChildOfClass("Humanoid")
-            local Root     = Player.Character:FindFirstChild("HumanoidRootPart")
-            if Humanoid and Root and Humanoid.MaxHealth > 500 then
-                local Magnitude = (LocalRoot.Position - Root.Position).Magnitude
-                if Magnitude < BestDistance then Best = Root; BestDistance = Magnitude end
+    function SetAutoBlock(Enabled)
+        State.AutoBlock = Enabled
+        NS_AB.AutoBlock = Enabled
+        if Enabled then _ab_start() else _ab_stop() end
+    end
+
+    -- Sync UI hitbox settings into NS_AB
+    task.spawn(function()
+        while true do
+            task.wait(0.5)
+            if JHB then
+                NS_AB.ShowHitboxVisual = JHB.ShowVisual
+                NS_AB.HitboxWidth = JHB.Width
+                NS_AB.HitboxHeight = JHB.Height
+                NS_AB.HitboxLength = JHB.Depth
+                NS_AB.HitboxDistance = JHB.Distance
+                NS_AB.HitboxTransparency = JHB.Transparency
+                NS_AB.HitboxColor = JHB.Color
             end
         end
-    end
-    return Best
-end
-local function StartAiming()
-    StopAiming()
-    AimConnection = RunService.Heartbeat:Connect(function()
-        if not State.PunchAimbot or not LocalRoot then return end
-        local Target = GetNearestHeavyRoot(); if not Target then return end
-        local Direction = Target.Position - LocalRoot.Position
-        Direction = Vector3.new(Direction.X, 0, Direction.Z)
-        if Direction.Magnitude < 0.01 then return end
-        LocalRoot.CFrame = CFrame.new(LocalRoot.Position, LocalRoot.Position + Direction.Unit)
-        local Camera = workspace.CurrentCamera
-        if Camera then Camera.CFrame = CFrame.new(Camera.CFrame.Position, Target.Position) end
     end)
-end
-local AnimationConnection
-local function HookAnimations()
-    if AnimationConnection then AnimationConnection:Disconnect(); AnimationConnection = nil end
-    StopAiming(); if not LocalHumanoid then return end
-    AnimationConnection = LocalHumanoid.AnimationPlayed:Connect(function(Track)
-        local Animation = Track.Animation; if not Animation then return end
-        local Id = Animation.AnimationId
-        if PunchAnimations[Id] and State.PunchAimbot then StartAiming(); Track.Stopped:Connect(StopAiming) end
-    end)
-end
-table.insert(CharacterCallbacks, HookAnimations)
-table.insert(CharacterCallbacks, function()
-    if not LocalCharacter then return end
-    LocalCharacter:GetAttributeChangedSignal("TimesHit"):Connect(function()
-        if State.AutoPunch and SpeedMultipliers and SpeedMultipliers:FindFirstChild("GuestBlocking") and LocalHumanoid and (LocalHumanoid:GetAttribute("Overheal") or 0) >= 10 and GetClosestKiller(55) then
-            task.wait(0.08); FireAbility("Punch")
-        end
-    end)
-end)
 
-function UpdateDiamondZoneVisibility() end -- stub (Cone Zone removed)
--- ============================================================
+    -- Punch aimbot / auto punch (kept from Flex)
+    local PunchAnimations = IdSet({"87259391926321","140703210927645","136007065400978","129843313690921","86709774283672","108807732150251","138040001965654","86096387000557","144729402831182","149382754027381","152406193748293","155783209463712"})
+    local AimConnection
+    local function StopAiming()
+        if AimConnection then AimConnection:Disconnect(); AimConnection = nil end
+    end
+    local function GetNearestHeavyRoot()
+        if not LocalRoot then return nil end
+        local Best; local BestDistance = math.huge
+        for _, Player in Players:GetPlayers() do
+            if Player ~= LocalPlayer and Player.Character then
+                local Humanoid = Player.Character:FindFirstChildOfClass("Humanoid")
+                local Root     = Player.Character:FindFirstChild("HumanoidRootPart")
+                if Humanoid and Root and Humanoid.MaxHealth > 500 then
+                    local Magnitude = (LocalRoot.Position - Root.Position).Magnitude
+                    if Magnitude < BestDistance then Best = Root; BestDistance = Magnitude end
+                end
+            end
+        end
+        return Best
+    end
+    local function StartAiming()
+        StopAiming()
+        AimConnection = RunService.Heartbeat:Connect(function()
+            if not State.PunchAimbot or not LocalRoot then return end
+            local Target = GetNearestHeavyRoot(); if not Target then return end
+            local Direction = Target.Position - LocalRoot.Position
+            Direction = Vector3.new(Direction.X, 0, Direction.Z)
+            if Direction.Magnitude < 0.01 then return end
+            LocalRoot.CFrame = CFrame.new(LocalRoot.Position, LocalRoot.Position + Direction.Unit)
+            local Camera = workspace.CurrentCamera
+            if Camera then Camera.CFrame = CFrame.new(Camera.CFrame.Position, Target.Position) end
+        end)
+    end
+    local AnimationConnection
+    local function HookAnimations()
+        if AnimationConnection then AnimationConnection:Disconnect(); AnimationConnection = nil end
+        StopAiming(); if not LocalHumanoid then return end
+        AnimationConnection = LocalHumanoid.AnimationPlayed:Connect(function(Track)
+            local Animation = Track.Animation; if not Animation then return end
+            local Id = Animation.AnimationId
+            if PunchAnimations[Id] and State.PunchAimbot then StartAiming(); Track.Stopped:Connect(StopAiming) end
+        end)
+    end
+    table.insert(CharacterCallbacks, HookAnimations)
+    table.insert(CharacterCallbacks, function()
+        if not LocalCharacter then return end
+        LocalCharacter:GetAttributeChangedSignal("TimesHit"):Connect(function()
+            if State.AutoPunch and SpeedMultipliers and SpeedMultipliers:FindFirstChild("GuestBlocking") and LocalHumanoid and (LocalHumanoid:GetAttribute("Overheal") or 0) >= 10 and GetClosestKiller(55) then
+                task.wait(0.08); FireAbility("Punch")
+            end
+        end)
+    end)
+
+    function UpdateDiamondZoneVisibility() end
 end -- scope
 
 local SetShowPing, GetSprinting, SetInfiniteStamina
@@ -2015,7 +1902,7 @@ pcall(function()
     }
 
     local esp = {
-        enabled = true,
+        enabled = false,
         highlights = {},
         billboards = {},
         connections = {},
@@ -2956,33 +2843,76 @@ pcall(function()
         findPizza() findZombies() findPuddles()
     end)
 
-    local mainSection
-    pcall(function() mainSection = tabESP:CreateSection("Main Settings") end)
-    pcall(function() if mainSection then mainSection:AddToggle({ Name = "Enable ESP", Default = esp.enabled, Callback = function(on) esp.enabled = on if on then startESP() else stopESP() end end }) end end)
+    -- ESP Tab controls (Flex helpers so labels + enable/disable work)
+    -- default off so user can enable from the tab
+    esp.enabled = false
+    stopESP()
 
-    local catSection
-    pcall(function() catSection = tabESP:CreateSection("Categories") end)
-    pcall(function() if catSection then catSection:AddToggle({ Name = "Killers", Default = esp.showKillers, Callback = function(on) esp.showKillers = on if esp.enabled then startESP() end end }) end end)
-    pcall(function() if catSection then catSection:AddToggle({ Name = "Survivors", Default = esp.showSurvivors, Callback = function(on) esp.showSurvivors = on if esp.enabled then startESP() end end }) end end)
-    pcall(function() if catSection then catSection:AddToggle({ Name = "Generators", Default = esp.showGenerators, Callback = function(on) esp.showGenerators = on if esp.enabled then startESP() end end }) end end)
-    pcall(function() if catSection then catSection:AddToggle({ Name = "Items", Default = esp.showItems, Callback = function(on) esp.showItems = on if esp.enabled then startESP() end end }) end end)
-    pcall(function() if catSection then catSection:AddToggle({ Name = "Structures", Default = esp.showStructures, Callback = function(on) esp.showStructures = on if esp.enabled then startESP() end end }) end end)
-    pcall(function() if catSection then catSection:AddToggle({ Name = "Groundbulb & Vine", Default = plant.enabled, Callback = function(on) if on then startPlants() else stopPlants() end end }) end end)
+    AddSection(tabESP, "Main Settings")
+    AddToggle(tabESP, "ESP_Enabled", "Enable ESP", false, function(on)
+        if on then startESP() else stopESP() end
+    end)
 
-    local secPlants
-    pcall(function() secPlants = tabESP:CreateSection("Groundbulb & Vine Settings") end)
-    pcall(function() if secPlants then secPlants:AddToggle({ Name = "Show Groundbulb", Default = plantOpts.groundbulb, Callback = function(on) plantOpts.groundbulb = on end }) end end)
-    pcall(function() if secPlants then secPlants:AddToggle({ Name = "Show Vine", Default = plantOpts.vine, Callback = function(on) plantOpts.vine = on end }) end end)
-    pcall(function() if secPlants then secPlants:AddSlider({ Name = "Highlight Transparency", Min = 0.1, Max = 1.0, Default = plantOpts.fillAlpha, Increment = 0.05, Callback = function(v) plantOpts.fillAlpha = v for _, data in pairs(plant.objects) do if data.highlight and data.highlight.Parent then data.highlight.FillTransparency = v end end end  }) end end)
-    pcall(function() if secPlants then secPlants:AddButton({ Name = "Refresh ESP", Callback = function() if plant.enabled then stopPlants() task.wait(0.1) startPlants() end end }) end end)
-    pcall(function() if secPlants then secPlants:Button({ Title = "Clear All Highlights", Callback = function() stopPlants() plant.tracked = {} plant.objects = {} end }) end end)
+    AddSection(tabESP, "Categories")
+    AddToggle(tabESP, "ESP_Killers", "Killers", true, function(on)
+        esp.showKillers = on
+        if esp.enabled then startESP() end
+    end)
+    AddToggle(tabESP, "ESP_Survivors", "Survivors", true, function(on)
+        esp.showSurvivors = on
+        if esp.enabled then startESP() end
+    end)
+    AddToggle(tabESP, "ESP_Generators", "Generators", true, function(on)
+        esp.showGenerators = on
+        if esp.enabled then startESP() end
+    end)
+    AddToggle(tabESP, "ESP_Items", "Items", true, function(on)
+        esp.showItems = on
+        if esp.enabled then startESP() end
+    end)
+    AddToggle(tabESP, "ESP_Structures", "Structures", true, function(on)
+        esp.showStructures = on
+        if esp.enabled then startESP() end
+    end)
+    AddToggle(tabESP, "ESP_Plants", "Groundbulb & Vine", false, function(on)
+        if on then startPlants() else stopPlants() end
+    end)
 
-    local visSection
-    pcall(function() visSection = tabESP:CreateSection("Visual Settings") end)
-    pcall(function() if visSection then visSection:AddSlider({ Name = "Max Distance", Min = 50, Max = 1000, Default = esp.maxDistance, Increment = 10, Callback = function(v) esp.maxDistance = v if esp.enabled then startESP() end end  }) end end)
-    pcall(function() if visSection then visSection:AddSlider({ Name = "Highlight Opacity", Min = 0.1, Max = 1.0, Default = esp.transparency, Increment = 0.05, Callback = function(v) esp.transparency = v if esp.enabled then startESP() end end  }) end end)
-    pcall(function() if visSection then visSection:AddButton({ Name = "Refresh ESP", Callback = function() if esp.enabled then startESP() end end }) end end)
-    pcall(function() if visSection then visSection:AddButton({ Name = "Refresh Generator Labels", Callback = function()
+    AddSection(tabESP, "Groundbulb & Vine Settings")
+    AddToggle(tabESP, "ESP_ShowGroundbulb", "Show Groundbulb", true, function(on)
+        plantOpts.groundbulb = on
+    end)
+    AddToggle(tabESP, "ESP_ShowVine", "Show Vine", true, function(on)
+        plantOpts.vine = on
+    end)
+    AddSlider(tabESP, "ESP_PlantAlpha", "Highlight Transparency", 0.1, 1.0, plantOpts.fillAlpha or 0.4, 0.05, function(v)
+        plantOpts.fillAlpha = v
+        for _, data in pairs(plant.objects) do
+            if data.highlight and data.highlight.Parent then
+                data.highlight.FillTransparency = v
+            end
+        end
+    end)
+    AddButton(tabESP, "Refresh Plant ESP", function()
+        if plant.enabled then stopPlants(); task.wait(0.1); startPlants() end
+    end)
+    AddButton(tabESP, "Clear Plant Highlights", function()
+        stopPlants(); plant.tracked = {}; plant.objects = {}
+    end)
+
+    AddSection(tabESP, "Visual Settings")
+    AddSlider(tabESP, "ESP_MaxDistance", "Max Distance", 50, 1000, esp.maxDistance or 400, 10, function(v)
+        esp.maxDistance = v
+        if esp.enabled then startESP() end
+    end)
+    AddSlider(tabESP, "ESP_Transparency", "Highlight Opacity", 0.1, 1.0, esp.transparency or 0.5, 0.05, function(v)
+        esp.transparency = v
+        if esp.enabled then startESP() end
+    end)
+    AddButton(tabESP, "Refresh ESP", function()
+        if esp.enabled then startESP() end
+    end)
+    AddButton(tabESP, "Refresh Generator Labels", function()
         for obj in pairs(genLabels) do
             if obj and obj.Parent then watchGen(obj) else cleanGen(obj) end
         end
@@ -2991,252 +2921,55 @@ pcall(function()
             for _, o in ipairs(ig:GetChildren()) do
                 if o.Name == "Generator" and o.Parent and readProg(o) < 100 then
                     if not genLabels[o] then
-                        if esp.enabled and not esp.highlights[o] then addTarget(o, espColors.generator, "Generator") end
+                        if esp.enabled and not esp.highlights[o] then
+                            addTarget(o, espColors.generator, "Generator")
+                        end
                     else
                         watchGen(o)
                     end
                 end
             end
         end
-    end }) end end)
+    end)
 
-    local secMobs
-    pcall(function() secMobs = tabESP:CreateSection("Minion & Ability ESP") end)
-    pcall(function() if secMobs then secMobs:AddToggle({ Name = "c00lkidd Pizza Bots", Default = mobOpts.pizza, Callback = function(on) mobOpts.pizza = on if on then findPizza() else clearMob("pizza") end end }) end end)
-    pcall(function() if secMobs then secMobs:AddToggle({ Name = "1x1x1x1 Zombies", Default = mobOpts.zombie, Callback = function(on) mobOpts.zombie = on if on then findZombies() else clearMob("zombie") end end }) end end)
-    pcall(function() if secMobs then secMobs:AddToggle({ Name = "JD Digital Footprints", Default = mobOpts.puddle, Callback = function(on) mobOpts.puddle = on if on then findPuddles() else clearMob("puddle") end end }) end end)
-    pcall(function() if secMobs then secMobs:AddSlider({ Name = "Highlight Transparency", Min = 0, Max = 1, Default = mobOpts.alpha, Increment = 0.05, Callback = function(v) mobOpts.alpha = v syncMobAlpha() end  }) end end)
-    pcall(function() if secMobs then secMobs:AddButton({ Name = "Force Rescan", Callback = function() clearMob("pizza") clearMob("zombie") clearMob("puddle") task.wait(0.1) findPizza() findZombies() findPuddles() end }) end end)
+    AddSection(tabESP, "Minion & Ability ESP")
+    AddToggle(tabESP, "ESP_Pizza", "c00lkidd Pizza Bots", false, function(on)
+        mobOpts.pizza = on
+        if on then findPizza() else clearMob("pizza") end
+    end)
+    AddToggle(tabESP, "ESP_Zombie", "1x1x1x1 Zombies", false, function(on)
+        mobOpts.zombie = on
+        if on then findZombies() else clearMob("zombie") end
+    end)
+    AddToggle(tabESP, "ESP_Puddle", "JD Digital Footprints", false, function(on)
+        mobOpts.puddle = on
+        if on then findPuddles() else clearMob("puddle") end
+    end)
+    AddSlider(tabESP, "ESP_MobAlpha", "Minion Highlight Transparency", 0, 1, mobOpts.alpha or 0.4, 0.05, function(v)
+        mobOpts.alpha = v
+    end)
 
-    getgenv()._flexsakenESP = {
-        applyConfig = function()
-            if not (Window and Window.Flags) then return end
-            if Window.Flags.espEnabled ~= nil then
-                esp.enabled = Window.Flags.espEnabled
-                if esp.enabled then startESP() else stopESP() end
-            end
-            if Window.Flags.espKillers ~= nil then esp.showKillers = Window.Flags.espKillers end
-            if Window.Flags.espSurvivors ~= nil then esp.showSurvivors = Window.Flags.espSurvivors end
-            if Window.Flags.espGenerators ~= nil then esp.showGenerators = Window.Flags.espGenerators end
-            if Window.Flags.espItems ~= nil then esp.showItems = Window.Flags.espItems end
-            if Window.Flags.espStructures ~= nil then esp.showStructures = Window.Flags.espStructures end
-            if type(Window.Flags.espMaxDistance) == "number" then esp.maxDistance = Window.Flags.espMaxDistance end
-            if type(Window.Flags.espTransparency) == "number" then esp.transparency = Window.Flags.espTransparency end
-            if Window.Flags.gvEspOn ~= nil then
-                if Window.Flags.gvEspOn then startPlants() else stopPlants() end
-            end
-            if Window.Flags.gvShowGroundbulb ~= nil then plantOpts.groundbulb = Window.Flags.gvShowGroundbulb end
-            if Window.Flags.gvShowVine ~= nil then plantOpts.vine = Window.Flags.gvShowVine end
-            if type(Window.Flags.gvTransparency) == "number" then plantOpts.fillAlpha = Window.Flags.gvTransparency end
-            if Window.Flags.espPizza ~= nil then mobOpts.pizza = Window.Flags.espPizza end
-            if Window.Flags.espZombie ~= nil then mobOpts.zombie = Window.Flags.espZombie end
-            if Window.Flags.espPuddle ~= nil then mobOpts.puddle = Window.Flags.espPuddle end
-            if type(Window.Flags.espMinionTrans) == "number" then mobOpts.alpha = Window.Flags.espMinionTrans syncMobAlpha() end
-        end,
-    }
-
-    if esp.enabled then task.wait(2) startESP() end
-
-    --// Candy ESP (c00lkidd candy) - original by luna <3 //
-    do
-        local Candy = { Enabled = false, Tracked = {}, Thread = nil, AddedConnection = nil }
-
-        local function CandyCleanup(Model)
-            local Data = Candy.Tracked[Model]
-            if not Data then return end
-            if Data.Highlight then pcall(function() Data.Highlight:Destroy() end) end
-            if Data.Billboard then pcall(function() Data.Billboard:Destroy() end) end
-            Candy.Tracked[Model] = nil
+    AddSection(tabESP, "Candy ESP")
+    AddToggle(tabESP, "ESP_Candy", "Candy ESP", false, function(on)
+        if on then
+            if type(startCandyESP) == "function" then startCandyESP() end
+        else
+            if type(stopCandyESP) == "function" then stopCandyESP() end
         end
+    end)
 
-        local function CandyAttach(Model)
-            if not Model or not Model.Parent or Candy.Tracked[Model] then return end
-            local Part = Model:FindFirstChildWhichIsA("BasePart", true)
-            if not Part then return end
-            local Highlight = Instance.new("Highlight")
-            Highlight.Name = "FlexSakenCandyHL"
-            Highlight.FillColor = Color3.fromRGB(220, 20, 60)
-            Highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-            Highlight.FillTransparency = 0.35
-            Highlight.OutlineTransparency = 0
-            Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            Highlight.Adornee = Model
-            Highlight.Parent = Model
-            local Billboard = Instance.new("BillboardGui")
-            Billboard.Name = "FlexSakenCandyTag"
-            Billboard.Size = UDim2.new(0, 110, 0, 18)
-            Billboard.StudsOffset = Vector3.new(0, 2, 0)
-            Billboard.AlwaysOnTop = true
-            Billboard.MaxDistance = 9999
-            Billboard.Adornee = Part
-            Billboard.Parent = Model
-            local Label = Instance.new("TextLabel")
-            Label.Size = UDim2.new(1, 0, 1, 0)
-            Label.BackgroundTransparency = 1
-            Label.Text = "Candy"
-            Label.TextColor3 = Color3.fromRGB(220, 20, 60)
-            Label.TextStrokeColor3 = Color3.new(0, 0, 0)
-            Label.TextStrokeTransparency = 0.2
-            Label.TextSize = 14
-            Label.Font = Enum.Font.GothamBold
-            Label.Parent = Billboard
-            Candy.Tracked[Model] = { Highlight = Highlight, Billboard = Billboard, Label = Label, Part = Part }
-        end
+    AddSection(tabESP, "Gear ESP")
+    AddToggle(tabESP, "ESP_Gear", "Gear ESP", false, function(on)
+        if on then startGearESP() else stopGearESP() end
+    end)
+    AddButton(tabESP, "Force Rescan Gear", function()
+        if gearESP.enabled then gearCleanup(); checkGear() end
+    end)
 
-        local function CandyScan()
-            if not Candy.Enabled then return end
-            for Model in pairs(Candy.Tracked) do
-                if not Model.Parent then CandyCleanup(Model) end
-            end
-            local MapFolder = svc.WS:FindFirstChild("Map")
-            local Ingame = MapFolder and MapFolder:FindFirstChild("Ingame")
-            local InnerMap = Ingame and Ingame:FindFirstChild("Map")
-            local Spawns = InnerMap and InnerMap:FindFirstChild("CurrencySpawns")
-            if Spawns then
-                for _, Object in ipairs(Spawns:GetChildren()) do
-                    if Object.Name == "C00lCandy" and Object:IsA("Model") then CandyAttach(Object) end
-                end
-            end
-            local Root = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-            if Root then
-                for _, Data in pairs(Candy.Tracked) do
-                    if Data.Part and Data.Part.Parent and Data.Label then
-                        Data.Label.Text = "Candy [" .. math.floor((Data.Part.Position - Root.Position).Magnitude) .. "]"
-                    end
-                end
-            end
-        end
-
-        local function CandyStart()
-            Candy.Enabled = true
-            if Candy.AddedConnection then Candy.AddedConnection:Disconnect() end
-            Candy.AddedConnection = svc.WS.DescendantAdded:Connect(function(Object)
-                if Candy.Enabled and Object.Name == "C00lCandy" and Object:IsA("Model") then
-                    task.wait(0.1)
-                    CandyAttach(Object)
-                end
-            end)
-            if Candy.Thread then task.cancel(Candy.Thread) end
-            Candy.Thread = task.spawn(function()
-                while Candy.Enabled do
-                    pcall(CandyScan)
-                    task.wait(0.5)
-                end
-            end)
-        end
-
-        local function CandyStop()
-            Candy.Enabled = false
-            if Candy.AddedConnection then Candy.AddedConnection:Disconnect(); Candy.AddedConnection = nil end
-            if Candy.Thread then task.cancel(Candy.Thread); Candy.Thread = nil end
-            for Model in pairs(Candy.Tracked) do CandyCleanup(Model) end
-        end
-
-        local SecCandy
-        pcall(function() SecCandy = tabESP:CreateSection("Candy ESP") end)
-        pcall(function() if SecCandy then SecCandy:AddToggle({ Name = "Candy ESP", Default = false,
-            Callback = function(on) if on then CandyStart() else CandyStop() end end }) end end)
-        pcall(function() if SecCandy then SecCandy:AddButton({ Name = "Force Rescan", Callback = function()
-            if Candy.Enabled then pcall(CandyScan) end
-        end }) end end)
-    end
-
-    --// Credits: Luna/Emily //
-    do
-        local GEAR_PATH = { "Map", "Ingame", "Map", "GearsTest", "Gear" }
-        local gearESP = { enabled = false, highlight = nil, billboard = nil, current = nil, conn = nil }
-
-        local function gearResolvePath()
-            local node = workspace
-            for _, name in ipairs(GEAR_PATH) do
-                node = node:FindFirstChild(name)
-                if not node then return nil end
-            end
-            return node
-        end
-
-        local function gearCleanup()
-            if gearESP.highlight and gearESP.highlight.Parent then pcall(function() gearESP.highlight:Destroy() end) end
-            if gearESP.billboard and gearESP.billboard.Parent then pcall(function() gearESP.billboard:Destroy() end) end
-            gearESP.highlight = nil; gearESP.billboard = nil; gearESP.current = nil
-        end
-
-        local function gearMakeHighlight(gear)
-            local hl = Instance.new("Highlight")
-            hl.Name = "GrayGearHighlight"
-            hl.FillColor = Color3.fromRGB(128, 128, 128)
-            hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-            hl.FillTransparency = 0.4
-            hl.OutlineTransparency = 0
-            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            hl.Adornee = gear
-            hl.Parent = gear
-            return hl
-        end
-
-        local function gearMakeBillboard(gear)
-            local bb = Instance.new("BillboardGui")
-            bb.Name = "GearLabel"
-            bb.Size = UDim2.new(0, 60, 0, 20)
-            bb.StudsOffset = Vector3.new(0, 1.5, 0)
-            bb.AlwaysOnTop = true
-            bb.MaxDistance = math.huge
-            bb.Adornee = gear
-            bb.Parent = gear
-            local lbl = Instance.new("TextLabel")
-            lbl.Name = "Label"
-            lbl.Size = UDim2.new(1, 0, 1, 0)
-            lbl.BackgroundTransparency = 1
-            lbl.Text = "Gear"
-            lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-            lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-            lbl.TextStrokeTransparency = 0
-            lbl.TextScaled = false
-            lbl.TextSize = 16
-            lbl.Font = Enum.Font.GothamBlack
-            lbl.Parent = bb
-            Instance.new("UICorner", lbl).CornerRadius = UDim.new(0, 4)
-            return bb
-        end
-
-        local function checkGear()
-            if not gearESP.enabled then return end
-            local gear = gearResolvePath()
-            if gear then
-                if gear ~= gearESP.current then
-                    gearCleanup()
-                    gearESP.current = gear
-                    gearESP.highlight = gearMakeHighlight(gear)
-                    gearESP.billboard = gearMakeBillboard(gear)
-                end
-            else
-                if gearESP.current then gearCleanup() end
-            end
-        end
-
-        local function startGearESP()
-            if gearESP.enabled then return end
-            gearESP.enabled = true
-            if gearESP.conn then pcall(function() gearESP.conn:Disconnect() end) end
-            gearESP.conn = RunService.Heartbeat:Connect(checkGear)
-            checkGear()
-        end
-
-        local function stopGearESP()
-            gearESP.enabled = false
-            if gearESP.conn then pcall(function() gearESP.conn:Disconnect() end) gearESP.conn = nil end
-            gearCleanup()
-        end
-
-        local secGear
-        pcall(function() secGear = tabESP:CreateSection("Gear ESP") end)
-        pcall(function() if secGear then secGear:AddToggle({ Name = "Gear ESP", Default = false,
-            Callback = function(on) if on then startGearESP() else stopGearESP() end end }) end end)
-        pcall(function() if secGear then secGear:AddButton({ Name = "Force Rescan", Callback = function()
-            if gearESP.enabled then gearCleanup() checkGear() end
-        end }) end end)
-    end
+    -- sync category defaults into State for AddToggle callbacks that check State
+    State.ESP_Enabled = false
 end)
+
 
 local SetAntiSlowness, ApplyJumping, ApplyInjury, ApplyBlindness, SetFreeZoom, SetCameraNoclip, SetFullbright, SetDeleteRagdolls, SetSpeedBoost, SetFlight, TPToItem, SetAutoDisarm, HandleNoliNPC, Handle007n7NPC, SetAntiHiddenStats, SetKillerWalls, SetShowChat, SetFov, RejoinServer
 do
