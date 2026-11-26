@@ -1868,13 +1868,27 @@ do
     local function GetNearestHeavyRoot()
         if not LocalRoot then return nil end
         local Best; local BestDistance = math.huge
-        for _, Player in Players:GetPlayers() do
-            if Player ~= LocalPlayer and Player.Character then
-                local Humanoid = Player.Character:FindFirstChildOfClass("Humanoid")
-                local Root     = Player.Character:FindFirstChild("HumanoidRootPart")
-                if Humanoid and Root and Humanoid.MaxHealth > 500 then
+        -- First try KillersFolder (most reliable)
+        if KillersFolder then
+            for _, Killer in KillersFolder:GetChildren() do
+                local Root     = Killer:FindFirstChild("HumanoidRootPart")
+                local Humanoid = Killer:FindFirstChildOfClass("Humanoid")
+                if Root and Humanoid and Humanoid.Health > 0 then
                     local Magnitude = (LocalRoot.Position - Root.Position).Magnitude
                     if Magnitude < BestDistance then Best = Root; BestDistance = Magnitude end
+                end
+            end
+        end
+        -- Fallback: any player with high MaxHealth (classic killer indicator)
+        if not Best then
+            for _, Player in Players:GetPlayers() do
+                if Player ~= LocalPlayer and Player.Character then
+                    local Humanoid = Player.Character:FindFirstChildOfClass("Humanoid")
+                    local Root     = Player.Character:FindFirstChild("HumanoidRootPart")
+                    if Humanoid and Root and Humanoid.Health > 0 and Humanoid.MaxHealth > 500 then
+                        local Magnitude = (LocalRoot.Position - Root.Position).Magnitude
+                        if Magnitude < BestDistance then Best = Root; BestDistance = Magnitude end
+                    end
                 end
             end
         end
@@ -1900,14 +1914,17 @@ do
         AnimationConnection = LocalHumanoid.AnimationPlayed:Connect(function(Track)
             local Animation = Track.Animation; if not Animation then return end
             local Id = Animation.AnimationId
-            if PunchAnimations[Id] and State.PunchAimbot then StartAiming(); Track.Stopped:Connect(StopAiming) end
+            -- Normalise: some tracks expose bare numbers, others expose rbxassetid:// URIs
+            local NormId = Id:match("%d+") and ("rbxassetid://" .. Id:match("%d+")) or Id
+            if PunchAnimations[NormId] and State.PunchAimbot then StartAiming(); Track.Stopped:Connect(StopAiming) end
         end)
     end
     table.insert(CharacterCallbacks, HookAnimations)
     table.insert(CharacterCallbacks, function()
         if not LocalCharacter then return end
         LocalCharacter:GetAttributeChangedSignal("TimesHit"):Connect(function()
-            if State.AutoPunch and SpeedMultipliers and SpeedMultipliers:FindFirstChild("GuestBlocking") and LocalHumanoid and (LocalHumanoid:GetAttribute("Overheal") or 0) >= 10 and GetClosestKiller(55) then
+            -- Removed overly strict GuestBlocking/Overheal requirements; just check AutoPunch is on and a killer is nearby
+            if State.AutoPunch and LocalHumanoid and LocalHumanoid.Health > 0 and GetClosestKiller(55) then
                 task.wait(0.08); FireAbility("Punch")
             end
         end)
