@@ -816,13 +816,14 @@ else
     pcall(function()
         Library.ForceCheckbox = false
         Library.ShowToggleFrameInKeybinds = true
+        if Library.SetDPIScale then Library:SetDPIScale(100) end
     end)
 end
 
 local Window
 do
     local Created, Result = pcall(function()
-        return Library:CreateWindow({
+        local win = Library:CreateWindow({
             Title          = "Flex Saken",
             Footer         = "v1.1 — Crimson",
             ToggleKeybind  = Enum.KeyCode.RightShift,
@@ -830,6 +831,10 @@ do
             AutoShow       = true,
             Name           = "Flex Saken",
         })
+        pcall(function()
+            if Library and Library.Toggle then Library:Toggle(true) end
+        end)
+        return win
     end)
     if Created and Result then
         Window = Result
@@ -893,13 +898,17 @@ local function _GetSection(Tab)
                 sec = Tab:CreateSection("General")
             elseif type(Tab.AddLeftGroupbox) == "function" then
                 sec = Tab:AddLeftGroupbox("General")
+            elseif type(Tab.AddRightGroupbox) == "function" then
+                sec = Tab:AddRightGroupbox("General")
             elseif type(Tab.AddGroupbox) == "function" then
                 sec = Tab:AddGroupbox({ Name = "General", Side = "Left" })
             elseif type(Tab.Section) == "function" then
                 sec = Tab:Section({ Title = "General" })
             end
         end)
-        -- If section is the tab itself, still ok for some UIs
+        if not sec then
+            warn("[FlexSaken] No groupbox for tab — controls may be labels only")
+        end
         _TabSections[Tab] = sec or Tab
     end
     return _TabSections[Tab]
@@ -993,14 +1002,37 @@ end
 local function AddSlider(Tab, Key, Title, Min, Max, Default, Step, Callback)
     local Value = Saved[Key]
     if type(Value) ~= "number" then Value = Default end
+    -- clamp saved value into range
+    if type(Value) == "number" then
+        if Value < Min then Value = Min end
+        if Value > Max then Value = Max end
+    end
     State[Key] = Value
     local Element
     local Sec = _GetSection(Tab)
+    local step = Step or 1
+    -- Obsidian Rounding is decimal places, not step size
+    local rounding = 0
+    if type(step) == "number" then
+        if step >= 1 then
+            rounding = 0
+        else
+            local s = tostring(step)
+            local dot = s:find("%.")
+            rounding = dot and (#s - dot) or 2
+            if rounding > 4 then rounding = 4 end
+        end
+    end
 
     local function onSlide(New)
         local v = New
-        if type(v) == "table" and v.Value ~= nil then v = v.Value end
-        v = tonumber(v) or Value
+        if type(v) == "table" then
+            v = v.Value or v.Default or v[1]
+        end
+        v = tonumber(v)
+        if not v then return end
+        if v < Min then v = Min end
+        if v > Max then v = Max end
         State[Key] = v
         Saved[Key] = v
         SaveSettings()
@@ -1010,12 +1042,14 @@ local function AddSlider(Tab, Key, Title, Min, Max, Default, Step, Callback)
     local Ok, Err = pcall(function()
         if not Sec then error("no section for slider " .. tostring(Title)) end
         if type(Sec.AddSlider) == "function" then
+            -- Official Obsidian: AddSlider(Idx, { Text, Default, Min, Max, Rounding, Callback })
             Element = Sec:AddSlider(tostring(Key), {
                 Text = tostring(Title),
+                Default = Value,
                 Min = Min,
                 Max = Max,
-                Default = Value,
-                Rounding = Step or 1,
+                Rounding = rounding,
+                Compact = false,
                 Callback = onSlide,
             })
             return
@@ -1027,7 +1061,9 @@ local function AddSlider(Tab, Key, Title, Min, Max, Default, Step, Callback)
                 Min = Min,
                 Max = Max,
                 Default = Value,
-                Step = Step or 1,
+                Step = step,
+                Increment = step,
+                Rounding = rounding,
                 Value = { Min = Min, Max = Max, Default = Value },
                 Callback = onSlide,
             })
@@ -1039,20 +1075,29 @@ local function AddSlider(Tab, Key, Title, Min, Max, Default, Step, Callback)
         warn("[FlexSaken] Slider '" .. tostring(Title) .. "' failed: " .. tostring(Err))
     end
 
+    -- Bind Library.Options OnChanged (Obsidian stores sliders here)
     pcall(function()
-        local O = (Library and Library.Options and Library.Options[Key]) or Element
-        if O then
-            if type(O.OnChanged) == "function" then
-                O:OnChanged(function(v) onSlide(v) end)
-            end
-            if type(O.SetValue) == "function" then
-                O:SetValue(Value)
-            end
-            if type(O.SetText) == "function" then
-                O:SetText(tostring(Title))
-            end
-            Element = O
+        local O = nil
+        if Library and Library.Options then
+            O = Library.Options[Key] or Library.Options[tostring(Key)]
         end
+        O = O or Element
+        if not O then return end
+        if type(O.OnChanged) == "function" then
+            O:OnChanged(function(v)
+                onSlide(v)
+            end)
+        end
+        if type(O.SetValue) == "function" then
+            O:SetValue(Value)
+        end
+        if type(O.SetText) == "function" then
+            O:SetText(tostring(Title))
+        end
+        -- Some builds need :SetMin / :SetMax to enable dragging
+        if type(O.SetMin) == "function" then pcall(O.SetMin, O, Min) end
+        if type(O.SetMax) == "function" then pcall(O.SetMax, O, Max) end
+        Element = O
     end)
 
     if Callback then task.defer(SafeCall, Key, Callback, Value) end
@@ -3794,32 +3839,119 @@ end)
 local GenConfig, MinigameSolver, installMinigameHooks
 do
 local MinigameFolder, FlowBoardModule, LockBoardModule, FlowInputModule, GearInputModule, LockInputModule, ConnectInputModule
-Risky("GeneratorModules", function()
-    local ok1, v1 = pcall(function() return ReplicatedStorage.Systems.Player.Game.Minigames end)
-    if ok1 then MinigameFolder = v1 end
+local function findModuleByName(root, name)
+    if not root then return nil end
+    local direct = root:FindFirstChild(name, true)
+    if direct then
+        local ok, mod = pcall(require, direct)
+        if ok and mod then return mod, direct end
+    end
+    return nil
+end
 
-    local ok2, v2 = pcall(function() return require(ReplicatedStorage.Modules.Minigames.FlowBoard) end)
-    if ok2 then FlowBoardModule = v2 end
-
-    local ok3, v3 = pcall(function() return require(ReplicatedStorage.Modules.Minigames.LockBoard) end)
-    if ok3 then LockBoardModule = v3 end
-
-    if MinigameFolder then
-        local ok4, v4 = pcall(function() return require(MinigameFolder.FlowClientMinigame.FlowInput) end)
-        if ok4 then FlowInputModule = v4 end
-
-        local ok5, v5 = pcall(function() return require(MinigameFolder.GearClientMinigame.GearInput) end)
-        if ok5 then GearInputModule = v5 end
-
-        local ok6, v6 = pcall(function() return require(MinigameFolder.LockClientMinigame.LockInput) end)
-        if ok6 then LockInputModule = v6 end
-
-        local ok7, v7 = pcall(function() return require(MinigameFolder.ConnectClientMinigame.ConnectInput) end)
-        if ok7 then ConnectInputModule = v7 end
+local function loadGeneratorModules()
+    -- Minigames folder (client inputs live here)
+    pcall(function()
+        MinigameFolder = ReplicatedStorage:FindFirstChild("Systems")
+            and ReplicatedStorage.Systems:FindFirstChild("Player")
+            and ReplicatedStorage.Systems.Player:FindFirstChild("Game")
+            and ReplicatedStorage.Systems.Player.Game:FindFirstChild("Minigames")
+    end)
+    if not MinigameFolder then
+        pcall(function()
+            local systems = ReplicatedStorage:FindFirstChild("Systems")
+            if systems then
+                MinigameFolder = systems:FindFirstChild("Minigames", true)
+            end
+        end)
     end
 
-    if not (FlowBoardModule and LockBoardModule and FlowInputModule and ConnectInputModule) then
-        warn("[FlexSaken] Generator solver modules not found — Auto Generator will be disabled")
+    -- Board solvers
+    local ok, mod
+    ok, mod = pcall(function() return require(ReplicatedStorage.Modules.Minigames.FlowBoard) end)
+    if ok and mod then FlowBoardModule = mod end
+    if not FlowBoardModule then
+        FlowBoardModule = select(1, findModuleByName(ReplicatedStorage, "FlowBoard"))
+    end
+
+    ok, mod = pcall(function() return require(ReplicatedStorage.Modules.Minigames.LockBoard) end)
+    if ok and mod then LockBoardModule = mod end
+    if not LockBoardModule then
+        LockBoardModule = select(1, findModuleByName(ReplicatedStorage, "LockBoard"))
+    end
+
+    if MinigameFolder then
+        local map = {
+            FlowInput = function(m) FlowInputModule = m end,
+            GearInput = function(m) GearInputModule = m end,
+            LockInput = function(m) LockInputModule = m end,
+            ConnectInput = function(m) ConnectInputModule = m end,
+        }
+        for _, desc in ipairs(MinigameFolder:GetDescendants()) do
+            if desc:IsA("ModuleScript") and map[desc.Name] then
+                local okm, m = pcall(require, desc)
+                if okm and m then map[desc.Name](m) end
+            end
+        end
+        -- explicit paths as fallback
+        if not FlowInputModule then
+            pcall(function()
+                FlowInputModule = require(MinigameFolder.FlowClientMinigame.FlowInput)
+            end)
+        end
+        if not GearInputModule then
+            pcall(function()
+                GearInputModule = require(MinigameFolder.GearClientMinigame.GearInput)
+            end)
+        end
+        if not LockInputModule then
+            pcall(function()
+                LockInputModule = require(MinigameFolder.LockClientMinigame.LockInput)
+            end)
+        end
+        if not ConnectInputModule then
+            pcall(function()
+                ConnectInputModule = require(MinigameFolder.ConnectClientMinigame.ConnectInput)
+            end)
+        end
+    else
+        -- last resort global search
+        FlowInputModule = FlowInputModule or select(1, findModuleByName(ReplicatedStorage, "FlowInput"))
+        GearInputModule = GearInputModule or select(1, findModuleByName(ReplicatedStorage, "GearInput"))
+        LockInputModule = LockInputModule or select(1, findModuleByName(ReplicatedStorage, "LockInput"))
+        ConnectInputModule = ConnectInputModule or select(1, findModuleByName(ReplicatedStorage, "ConnectInput"))
+    end
+
+    local ready = FlowBoardModule and LockBoardModule and FlowInputModule and ConnectInputModule
+    if not ready then
+        warn("[FlexSaken] Generator solver modules incomplete — will retry on enable")
+        warn(string.format(
+            "[FlexSaken] FlowBoard=%s LockBoard=%s FlowInput=%s ConnectInput=%s GearInput=%s MinigameFolder=%s",
+            tostring(FlowBoardModule ~= nil),
+            tostring(LockBoardModule ~= nil),
+            tostring(FlowInputModule ~= nil),
+            tostring(ConnectInputModule ~= nil),
+            tostring(GearInputModule ~= nil),
+            tostring(MinigameFolder ~= nil)
+        ))
+    else
+        print("[FlexSaken] Generator solver modules ready")
+    end
+    return ready
+end
+
+Risky("GeneratorModules", function()
+    loadGeneratorModules()
+end)
+
+-- Retry module load a few times (replication lag)
+task.spawn(function()
+    for attempt = 1, 8 do
+        if FlowBoardModule and FlowInputModule and ConnectInputModule and LockBoardModule then
+            break
+        end
+        task.wait(1.5)
+        pcall(loadGeneratorModules)
     end
 end)
 
@@ -3933,12 +4065,17 @@ local function solveFlowBoard(board)
 end
 
 function installMinigameHooks()
-    if MinigameSolver.Installed then return end
+    if MinigameSolver.Installed then return true end
+    if not (FlowBoardModule and LockBoardModule and FlowInputModule and ConnectInputModule) then
+        pcall(loadGeneratorModules)
+    end
     if not (FlowBoardModule and LockBoardModule and FlowInputModule and ConnectInputModule) then
         warn("[FlexSaken] Cannot install minigame hooks — required modules missing")
-        return
+        Notify("Auto Generator", "Modules not found yet — open a gen and toggle again", 5)
+        return false
     end
     MinigameSolver.Installed = true
+    print("[FlexSaken] Minigame hooks installed")
 
     local oldLockBoardNew = LockBoardModule.new
     LockBoardModule.new = function(...)
@@ -4497,9 +4634,222 @@ Risky("JaneDoe", function()
     end
 end)
 
--- backstab
+-- backstab (Auto Backstab v4 — in-menu, no external GUI)
+local BS = {
+    Enabled = false,
+    AutoStuds = false,
+    DetectPing = false,
+    MoreDirect = false,
+    MoreDirectRN = false,
+    MoreDirectEnd = false,
+    DistCheck = false,
+    DistCheckStuds = 7,
+    StartDelay = 0.05,
+    Duration = 0.2,
+    BehindStuds = 4,
+    AutoStandStuds = 5.5,
+    AutoRunStuds = 3.4,
+    DashstabEnabled = false,
+    DsStartDelay = 0.1,
+    Running = false,
+    Doitmate = false,
+    Speed = nil,
+    TargetAnimId = "100725497418533",
+    DashstabAnimId = "89448354637442",
+}
 
-loadstring(game:HttpGet("https://raw.githubusercontent.com/goularte2027-beep/Two-time-script/refs/heads/main/2time"))()
+local function BS_RefreshSpeed()
+    if LocalPlayer.Character then
+        local sm = LocalPlayer.Character:FindFirstChild("SpeedMultipliers")
+        if sm then BS.Speed = sm:FindFirstChild("Sprinting") end
+    end
+end
+BS_RefreshSpeed()
+LocalPlayer.CharacterAdded:Connect(function() task.wait(0.5); BS_RefreshSpeed() end)
+
+local function BS_GetFirstKiller()
+    RefreshFolders()
+    local kf = KillersFolder or (workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild("Killers"))
+    if not kf then return nil end
+    for _, inst in ipairs(kf:GetDescendants()) do
+        if inst:IsA("Model") then
+            local hum = inst:FindFirstChildOfClass("Humanoid")
+            local hrp = inst:FindFirstChild("HumanoidRootPart")
+            if hum and hrp and hum.Health > 0 then return inst end
+        end
+    end
+    return nil
+end
+
+local function BS_GetPing()
+    local ok, val = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() end)
+    if ok and val then return val end
+    local ok2, val2 = pcall(function() return LocalPlayer:GetNetworkPing() * 1000 end)
+    if ok2 and val2 then return val2 end
+    return 20
+end
+
+local function BS_RunPlaceSequence()
+    if not BS.Enabled or BS.Running then return end
+    BS.Running = true
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    task.wait(BS.StartDelay)
+    if not char or not char.Parent then BS.Running = false; return end
+    local place = Instance.new("Part")
+    place.Name = "place"; place.Size = Vector3.new(2,2,2); place.Transparency = 1
+    place.CanCollide = false; place.Anchored = true; place.Parent = char
+    local oldPP = char.PrimaryPart
+    local oldSpeed = BS.Speed and BS.Speed.Value or 16
+    if BS.MoreDirect then BS.MoreDirectRN = true; task.wait(0.01); BS.MoreDirectRN = false end
+    local st = os.clock()
+    while os.clock() - st < BS.Duration do
+        if not char.Parent or not place.Parent or not BS.Enabled then break end
+        if BS.Speed then BS.Speed.Value = 0 end
+        BS.Doitmate = true
+        RunService.PreRender:Wait()
+    end
+    if place and place.Parent then place:Destroy() end
+    if char and char.Parent then char.PrimaryPart = oldPP end
+    if BS.Speed then BS.Speed.Value = oldSpeed end
+    BS.Doitmate = false
+    if BS.MoreDirect then
+        BS.MoreDirectRN = true; task.wait(0.01); BS.MoreDirectEnd = true; BS.MoreDirectRN = false; task.wait(0.01); BS.MoreDirectEnd = false
+    end
+    BS.Running = false
+end
+
+local function BS_RunDashstabSequence()
+    if not BS.DashstabEnabled or BS.Running then return end
+    BS.Running = true
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    task.wait(BS.DsStartDelay)
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not char.Parent or not hrp then BS.Running = false; return end
+    local place = Instance.new("Part")
+    place.Name = "place"; place.Size = Vector3.new(2,2,2); place.Transparency = 1
+    place.CanCollide = false; place.Anchored = true; place.Parent = char
+    local oldPP = char.PrimaryPart
+    local oldSpeed = BS.Speed and BS.Speed.Value or 16
+    if BS.MoreDirect then BS.MoreDirectRN = true; task.wait(0.01); BS.MoreDirectRN = false end
+    local st = os.clock()
+    while os.clock() - st < BS.Duration do
+        if not char.Parent or not place.Parent or not BS.DashstabEnabled then break end
+        if BS.Speed then BS.Speed.Value = 0 end
+        BS.Doitmate = true
+        RunService.PreRender:Wait()
+    end
+    if BS.Speed then BS.Speed.Value = oldSpeed end
+    BS.Doitmate = false
+    if BS.MoreDirect then
+        BS.MoreDirectRN = true; task.wait(0.001); BS.MoreDirectEnd = true; BS.MoreDirectRN = false; task.wait(0.001); BS.MoreDirectEnd = false
+    end
+    if place and place.Parent then place:Destroy() end
+    if char and char.Parent then char.PrimaryPart = oldPP end
+    BS.Running = false
+end
+
+pcall(function()
+    local NetworkModuleAB = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"):WaitForChild("Network"))
+    local CharReplicationAB = require(ReplicatedStorage:WaitForChild("Systems"):WaitForChild("Player"):WaitForChild("Game"):WaitForChild("CharacterReplication"))
+    if typeof(hookfunction) == "function" then
+        local oldFire
+        oldFire = hookfunction(NetworkModuleAB.FireServerConnection, function(self, connectionName, eventType, ...)
+            local args = {...}
+            if connectionName == "UpdateCharacterPosition" then
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                local killer = BS_GetFirstKiller()
+                if killer and hrp then
+                    local kHrp = killer:FindFirstChild("HumanoidRootPart")
+                    if kHrp then
+                        local tCF = kHrp.CFrame * CFrame.new(0, 0, BS.BehindStuds)
+                        local tDir = hrp.CFrame * CFrame.new(0, -90000, 0)
+                        local tEnd = hrp.CFrame * CFrame.new(0, 0, 0)
+                        if BS.MoreDirectRN then
+                            args[1] = CharReplicationAB.Serialize(tDir, hrp.AssemblyLinearVelocity)
+                        elseif BS.MoreDirectEnd then
+                            args[1] = CharReplicationAB.Serialize(tEnd, hrp.AssemblyLinearVelocity)
+                        elseif BS.Doitmate then
+                            args[1] = CharReplicationAB.Serialize(tCF, hrp.AssemblyLinearVelocity)
+                        end
+                    end
+                end
+            end
+            return oldFire(self, connectionName, eventType, unpack(args))
+        end)
+    end
+end)
+
+local function BS_CheckDist(h1, h2, range)
+    if not h1 or not h2 then return false end
+    return (h1.Position - h2.Position).Magnitude <= range
+end
+
+local function BS_HookChar(character)
+    local hum = character:WaitForChild("Humanoid", 5)
+    if not hum then return end
+    local animator = hum:FindFirstChildOfClass("Animator") or hum:FindFirstChild("Animator")
+    if not animator then return end
+    animator.AnimationPlayed:Connect(function(track)
+        if not track or not track.Animation then return end
+        local killer = BS_GetFirstKiller()
+        if not killer then return end
+        local id = tostring(track.Animation.AnimationId or ""):gsub("%D", "")
+        if (id == BS.TargetAnimId or id == "106086955212611") and BS.Enabled then
+            if BS.DistCheck then
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                local kHrp = killer:FindFirstChild("HumanoidRootPart")
+                if not BS_CheckDist(hrp, kHrp, BS.DistCheckStuds) then return end
+            end
+            task.spawn(BS_RunPlaceSequence)
+        elseif (id == BS.DashstabAnimId or id == "107640065977686") and BS.DashstabEnabled then
+            if BS.DistCheck then
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                local kHrp = killer:FindFirstChild("HumanoidRootPart")
+                if not BS_CheckDist(hrp, kHrp, BS.DistCheckStuds) then return end
+            end
+            task.spawn(BS_RunDashstabSequence)
+        end
+    end)
+end
+
+if LocalPlayer.Character then task.spawn(BS_HookChar, LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(BS_HookChar)
+
+local lastK, lastKPos, smoothSpd = nil, nil, 0
+RunService.Heartbeat:Connect(function(dt)
+    if not BS.AutoStuds then
+        lastK = nil; smoothSpd = 0
+        return
+    end
+    local killer = BS_GetFirstKiller()
+    if killer then
+        local kHrp = killer:FindFirstChild("HumanoidRootPart")
+        if kHrp then
+            local curPos = kHrp.Position
+            local rawSpd = 0
+            if lastK == killer and lastKPos then
+                local hd = Vector3.new(curPos.X,0,curPos.Z) - Vector3.new(lastKPos.X,0,lastKPos.Z)
+                rawSpd = hd.Magnitude / math.max(dt, 1e-4)
+            end
+            lastK = killer; lastKPos = curPos
+            smoothSpd = smoothSpd + (rawSpd - smoothSpd) * math.min(dt*15, 1)
+            local fs = math.clamp(smoothSpd, 0, 30)
+            local sRun = BS.AutoRunStuds
+            if BS.DetectPing then
+                local ping = math.max(BS_GetPing(), 20)
+                sRun = BS.AutoRunStuds - ((ping - 20) / 100) * 1.5
+                sRun = math.max(sRun, 1.0)
+            end
+            local slope = (BS.AutoStandStuds - sRun) / 26.0
+            BS.BehindStuds = BS.AutoStandStuds - (fs * slope)
+        else
+            lastK = nil
+        end
+    else
+        lastK = nil; smoothSpd = 0
+    end
+end)
 
 -- veeronica
 
@@ -5067,9 +5417,23 @@ AddSection(TabSurvivor, "Generator")
 AddToggle(TabSurvivor, "AutoGeneratorMinigame", "Auto Generator", false, function(enabled)
     MinigameSolver.ManualEnabled = enabled
     MinigameSolver.Enabled       = enabled
+    MinigameSolver.AutoEnabled   = enabled
     MinigameSolver.Generation    += 1
     if enabled then
-        pcall(installMinigameHooks)
+        task.spawn(function()
+            local ok = false
+            for _ = 1, 6 do
+                ok = installMinigameHooks()
+                if ok or MinigameSolver.Installed then break end
+                pcall(loadGeneratorModules)
+                task.wait(1)
+            end
+            if MinigameSolver.Installed then
+                Notify("Auto Generator", "Ready — start a generator minigame", 4)
+            else
+                Notify("Auto Generator", "Still missing modules — try again in-round", 5)
+            end
+        end)
     end
 end)
 AddSlider(TabSurvivor, "MinGameStartDelay",   "Start Delay (s)",          0,   5,    1.5,   0.1, function(v) GenConfig.StartDelay   = v         end)
@@ -5949,8 +6313,45 @@ AddSlider(TabKiller, "X4_EntWindup", "Entanglement Windup (s)", 0.1, 3, 0.75, 0.
 end)
 
 AddSection(TabTwoTime, "Auto Backstab")
--- Auto Backstab is loaded via external script (see loadstring block above).
--- Its own UI is provided by that script.
+AddToggle(TabTwoTime, "BS_Enabled", "Auto Backstab (Main)", false, function(v)
+    BS.Enabled = v
+end)
+AddSlider(TabTwoTime, "BS_StartDelay", "Start Delay (s)", 0, 1, 0.05, 0.01, function(v)
+    BS.StartDelay = v
+end)
+AddSlider(TabTwoTime, "BS_Duration", "Duration (s)", 0.05, 1, 0.2, 0.01, function(v)
+    BS.Duration = v
+end)
+AddSlider(TabTwoTime, "BS_BehindStuds", "Behind Studs", 1, 15, 4, 0.1, function(v)
+    BS.BehindStuds = v
+end)
+AddToggle(TabTwoTime, "BS_DistCheck", "Distance Check", false, function(v)
+    BS.DistCheck = v
+end)
+AddSlider(TabTwoTime, "BS_DistStuds", "Distance Check Studs", 1, 30, 7, 1, function(v)
+    BS.DistCheckStuds = v
+end)
+AddToggle(TabTwoTime, "BS_AutoStuds", "Auto Studs (Speed-based)", false, function(v)
+    BS.AutoStuds = v
+end)
+AddSlider(TabTwoTime, "BS_AutoStand", "Auto Studs Stand", 1, 15, 5.5, 0.1, function(v)
+    BS.AutoStandStuds = v
+end)
+AddSlider(TabTwoTime, "BS_AutoRun", "Auto Studs Run", 1, 15, 3.4, 0.1, function(v)
+    BS.AutoRunStuds = v
+end)
+AddToggle(TabTwoTime, "BS_DetectPing", "Also Detect Ping", false, function(v)
+    BS.DetectPing = v
+end)
+AddToggle(TabTwoTime, "BS_MoreDirect", "More Direct", false, function(v)
+    BS.MoreDirect = v
+end)
+AddToggle(TabTwoTime, "BS_Dashstab", "Dashstab", false, function(v)
+    BS.DashstabEnabled = v
+end)
+AddSlider(TabTwoTime, "BS_DsDelay", "Dashstab Start Delay (s)", 0, 1, 0.1, 0.01, function(v)
+    BS.DsStartDelay = v
+end)
 
 AddSection(TabExtra, "Sk8 / Spray")
 AddToggle(TabExtra, "Sk8Control",  "Sk8 Control Override",   false, function(v) State.Sk8Control = v end)
@@ -6074,8 +6475,18 @@ end)
 AddSection(TabExtra, "Generator Auto-Solver (Extra)")
 AddToggle(TabExtra, "AutoGen2", "Auto Generator (Mirror)", false, function(enabled)
     MinigameSolver.AutoEnabled = enabled
+    MinigameSolver.ManualEnabled = enabled or MinigameSolver.ManualEnabled
+    MinigameSolver.Enabled = enabled or MinigameSolver.ManualEnabled
     MinigameSolver.Generation += 1
-    if enabled then pcall(installMinigameHooks) end
+    if enabled then
+        task.spawn(function()
+            for _ = 1, 6 do
+                if installMinigameHooks() or MinigameSolver.Installed then break end
+                pcall(loadGeneratorModules)
+                task.wait(1)
+            end
+        end)
+    end
 end)
 
 -- ============================================================
