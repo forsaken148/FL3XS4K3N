@@ -1536,7 +1536,7 @@ do
         ["Noli"]      = { dura = 0.37, life = 0.37 },
         ["Azure"]     = { dura = 0.35, life = 0.35 },
     }
-    local DEFAULT_HITBOX = { dura = 0.01, life = 0.01 }
+    local DEFAULT_HITBOX = { dura = 0.45, life = 0.45 }
 
     local function getKillerHitbox(killerName)
         if not killerName then return DEFAULT_HITBOX end
@@ -1759,7 +1759,10 @@ do
         if not _ab_active or not State.AutoBlock then return end
         if not model or not model.Parent or _ab_isMe(model) then return end
         if _ab_seen[model] and os.clock() < _ab_seen[model] then return end
-        _ab_seen[model] = os.clock() + 0.01
+        _ab_seen[model] = os.clock() + 0.5
+        -- Fire block immediately on sound/anim detection
+        fireBlockNS()
+        -- Also run hitbox check as backup
         makeHitboxAndCheck(model, function() fireBlockNS() end)
     end
 
@@ -1776,17 +1779,29 @@ do
         end)
     end
 
+    local function _ab_checkAnimId(rawId, model)
+        local normId = rawId:find("rbxassetid://") and rawId or ("rbxassetid://" .. (rawId:match("%d+") or ""))
+        if _ab_animIDs[normId] then _ab_trigger(model) end
+    end
+
     local function _ab_hookAnim(model)
         if not model or _ab_isMe(model) then return end
         task.spawn(function()
             local hum = model:WaitForChild("Humanoid", 5); if not hum then return end
-            local an = hum:FindFirstChildOfClass("Animator") or hum
+            -- Prefer Animator child; fall back to Humanoid itself
+            local animator = hum:FindFirstChildOfClass("Animator")
+            local an = animator or hum
+            -- Check any already-playing tracks
+            if animator then
+                for _, tr in ipairs(animator:GetPlayingAnimationTracks()) do
+                    if tr.Animation then
+                        _ab_checkAnimId(tostring(tr.Animation.AnimationId or ""), model)
+                    end
+                end
+            end
             an.AnimationPlayed:Connect(function(tr)
                 if not _ab_active or not State.AutoBlock or not tr.Animation then return end
-                local rawId = tostring(tr.Animation.AnimationId or "")
-                local normId = rawId:find("rbxassetid://") and rawId or ("rbxassetid://" .. (rawId:match("%d+") or ""))
-                if not _ab_animIDs[normId] then return end
-                _ab_trigger(model)
+                _ab_checkAnimId(tostring(tr.Animation.AnimationId or ""), model)
             end)
         end)
     end
