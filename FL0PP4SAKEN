@@ -1526,17 +1526,17 @@ do
     }
 
     local KILLER_HITBOX = {
-        ["CoolKid"]   = { dura = 0.03, life = 0.03, width = 5, length = 7, height = 6 },
-        ["Slasher"]   = { dura = 0.15, life = 0.15 },
-        ["1x1x1x1"]   = { dura = 0.15, life = 0.15 },
-        ["JohnDoe"]   = { dura = 0.15, life = 0.15 },
-        ["John Doe"]  = { dura = 0.15, life = 0.15 },
-        ["Nosferatu"] = { dura = 0.15, life = 0.15 },
-        ["Sixer"]     = { dura = 0.15, life = 0.15, distance = 6.0 },
-        ["Noli"]      = { dura = 0.15, life = 0.15 },
-        ["Azure"]     = { dura = 0.15, life = 0.15 },
+        ["CoolKid"]   = { dura = 0.01, life = 0.01, width = 5, length = 7, height = 6 },
+        ["Slasher"]   = { dura = 0.01, life = 0.01 },
+        ["1x1x1x1"]   = { dura = 0.01, life = 0.01 },
+        ["JohnDoe"]   = { dura = 0.01, life = 0.01 },
+        ["John Doe"]  = { dura = 0.01, life = 0.01 },
+        ["Nosferatu"] = { dura = 0.01, life = 0.01 },
+        ["Sixer"]     = { dura = 0.01, life = 0.01, distance = 6.0 },
+        ["Noli"]      = { dura = 0.01, life = 0.01 },
+        ["Azure"]     = { dura = 0.01, life = 0.01 },
     }
-    local DEFAULT_HITBOX = { dura = 0.15, life = 0.15 }
+    local DEFAULT_HITBOX = { dura = 0.01, life = 0.01 }
 
     local function getKillerHitbox(killerName)
         if not killerName then return DEFAULT_HITBOX end
@@ -1759,7 +1759,7 @@ do
         if not _ab_active or not State.AutoBlock then return end
         if not model or not model.Parent or _ab_isMe(model) then return end
         if _ab_seen[model] and os.clock() < _ab_seen[model] then return end
-        _ab_seen[model] = os.clock() + 0.1
+        _ab_seen[model] = os.clock() + 0.01
         -- Only block if killer is within hitbox range
         makeHitboxAndCheck(model, function() fireBlockNS() end)
     end
