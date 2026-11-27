@@ -1768,7 +1768,9 @@ do
         _ab_hooked[snd] = true
         snd.Played:Connect(function()
             if not _ab_active or not State.AutoBlock then return end
-            if not _ab_soundIDs[snd.SoundId] then return end
+            local rawId = tostring(snd.SoundId or "")
+            local normId = rawId:find("rbxassetid://") and rawId or ("rbxassetid://" .. (rawId:match("%d+") or ""))
+            if not _ab_soundIDs[normId] then return end
             local m = model or snd:FindFirstAncestorOfClass("Model")
             _ab_trigger(m)
         end)
@@ -1781,7 +1783,9 @@ do
             local an = hum:FindFirstChildOfClass("Animator") or hum
             an.AnimationPlayed:Connect(function(tr)
                 if not _ab_active or not State.AutoBlock or not tr.Animation then return end
-                if not _ab_animIDs[tr.Animation.AnimationId] then return end
+                local rawId = tostring(tr.Animation.AnimationId or "")
+                local normId = rawId:find("rbxassetid://") and rawId or ("rbxassetid://" .. (rawId:match("%d+") or ""))
+                if not _ab_animIDs[normId] then return end
                 _ab_trigger(model)
             end)
         end)
