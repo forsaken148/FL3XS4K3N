@@ -1849,15 +1849,16 @@ do
     }
 
     local KILLER_HITBOX = {
-        ["CoolKid"]   = { dura = 0.16, life = 0.08, width = 5, length = 7, height = 6 },
-        ["Slasher"]   = { dura = 0.01, life = 0.01 },
-        ["1x1x1x1"]   = { dura = 0.01, life = 0.01 },
-        ["JohnDoe"]   = { dura = 0.01, life = 0.01 },
-        ["John Doe"]  = { dura = 0.01, life = 0.01 },
-        ["Nosferatu"] = { dura = 0.01, life = 0.01 },
-        ["Sixer"]     = { dura = 0.01, life = 0.01, distance = 6.0 },
-        ["Noli"]      = { dura = 0.01, life = 0.01 },
-        ["Azure"]     = { dura = 0.01, life = 0.01 },
+        -- Fast attack windows for the two quickest M1 killers.
+        ["CoolKid"]   = { dura = 0.01, life = 0.01, width = 5, length = 7, height = 6 },
+        ["Slasher"]   = { dura = 0.02, life = 0.02 },
+        ["1x1x1x1"]   = { dura = 0.10, life = 0.08 },
+        ["JohnDoe"]   = { dura = 0.10, life = 0.08 },
+        ["John Doe"]  = { dura = 0.10, life = 0.08 },
+        ["Nosferatu"] = { dura = 0.10, life = 0.08 },
+        ["Sixer"]     = { dura = 0.10, life = 0.08, distance = 6.0 },
+        ["Noli"]      = { dura = 0.10, life = 0.08 },
+        ["Azure"]     = { dura = 0.10, life = 0.08 },
     }
     local DEFAULT_HITBOX = { dura = 0.01, life = 0.01 }
 
@@ -1896,77 +1897,99 @@ do
         if not killerModel or not killerModel.Parent then return end
         local killerRoot = killerModel:FindFirstChild("HumanoidRootPart") or killerModel:FindFirstChild("RootPart")
         if not killerRoot then return end
+
         local hbCfg = getKillerHitbox(killerModel.Name)
-        local m = NS_AB.HitboxMultiplier or 1
+        local multiplier = NS_AB.HitboxMultiplier or 1
         local hbWidth = hbCfg.width or NS_AB.HitboxWidth
         local hbLength = hbCfg.length or NS_AB.HitboxLength
         local hbHeight = hbCfg.height or NS_AB.HitboxHeight
-        -- UI JHB overrides when enabled
         if JHB.Enabled then
-            hbWidth = JHB.Width
-            hbHeight = JHB.Height
-            hbLength = JHB.Depth
+            hbWidth, hbHeight, hbLength = JHB.Width, JHB.Height, JHB.Depth
         end
-        local size = Vector3.new(hbWidth*m, hbHeight*m, hbLength*m)
-        local op = OverlapParams.new()
-        op.FilterType = Enum.RaycastFilterType.Exclude
-        op.FilterDescendantsInstances = {killerModel}
+
+        local size = Vector3.new(hbWidth * multiplier, hbHeight * multiplier, hbLength * multiplier)
+        local overlap = OverlapParams.new()
+        overlap.FilterType = Enum.RaycastFilterType.Exclude
+        overlap.FilterDescendantsInstances = { killerModel }
+
         task.spawn(function()
-            local startTime = tick()
+            local startedAt = os.clock()
             local blockedOnce = false
-            local showVis = NS_AB.ShowHitboxVisual
-            if JHB.Enabled then showVis = JHB.ShowVisual end
-            local dist = hbCfg.distance or NS_AB.HitboxDistance or 3
-            if JHB.Enabled then dist = JHB.Distance end
+            local showVisual = NS_AB.ShowHitboxVisual
+            local distance = hbCfg.distance or NS_AB.HitboxDistance or 3
             local color = NS_AB.HitboxColor
-            if JHB.Enabled then color = JHB.Color end
-            local trans = NS_AB.HitboxTransparency
-            if JHB.Enabled then trans = JHB.Transparency end
-            while os.clock() - startTime < hbCfg.dura do
-                if blockedOnce then break end
-                if not State.AutoBlock then break end
-                local ckr = killerModel:FindFirstChild("HumanoidRootPart") or killerModel:FindFirstChild("RootPart")
-                if not ckr then break end
-                local frozenCFrame = ckr.CFrame * CFrame.new(0,0,-(dist))
-                local hb = Instance.new("Part")
-                hb.Name = "AutoBlockHitbox_Frame"
-                hb.Transparency = showVis and trans or 1
-                hb.CanCollide = false; hb.CanTouch = false; hb.CanQuery = false
-                hb.CastShadow = false; hb.Anchored = true
-                hb.Size = size; hb.Color = color
-                hb.Material = (JHB.Enabled and JHB.GlowMode) and Enum.Material.ForceField or Enum.Material.ForceField
-                hb.CFrame = frozenCFrame; hb.Parent = workspace
-                local sb
-                if NS_AB.ShowOutline and showVis then
-                    sb = Instance.new("SelectionBox")
-                    sb.Adornee = hb; sb.Color3 = color
-                    sb.LineThickness = NS_AB.OutlineThickness
-                    sb.Transparency = NS_AB.OutlineTransparencyValue or 0.6
-                    sb.Visible = true; sb.Parent = hb
+            local transparency = NS_AB.HitboxTransparency
+            if JHB.Enabled then
+                showVisual = JHB.ShowVisual
+                distance = JHB.Distance
+                color = JHB.Color
+                transparency = JHB.Transparency
+            end
+
+            -- Reuse one optional visual instead of allocating a Part every frame.
+            local visual, outline
+            if showVisual then
+                visual = Instance.new("Part")
+                visual.Name = "AutoBlockHitbox_Visual"
+                visual.Anchored = true
+                visual.CanCollide = false
+                visual.CanTouch = false
+                visual.CanQuery = false
+                visual.CastShadow = false
+                visual.Material = Enum.Material.ForceField
+                visual.Size = size
+                visual.Color = color
+                visual.Transparency = transparency
+                visual.Parent = HitboxFolder
+
+                if NS_AB.ShowOutline then
+                    outline = Instance.new("SelectionBox")
+                    outline.Adornee = visual
+                    outline.Color3 = color
+                    outline.LineThickness = NS_AB.OutlineThickness
+                    outline.Transparency = NS_AB.OutlineTransparencyValue or 0.6
+                    outline.Visible = true
+                    outline.Parent = visual
                 end
-                pcall(function() game:GetService("Debris"):AddItem(hb, hbCfg.life) end)
+            end
+
+            while os.clock() - startedAt < hbCfg.dura do
+                if blockedOnce or not State.AutoBlock or not killerModel.Parent then break end
+                local currentRoot = killerModel:FindFirstChild("HumanoidRootPart") or killerModel:FindFirstChild("RootPart")
+                if not currentRoot then break end
+
+                local boxCFrame = currentRoot.CFrame * CFrame.new(0, 0, -distance)
+                if visual then visual.CFrame = boxCFrame end
+
+                -- Direct box query avoids temporary hitbox Part creation each frame.
+                local parts = workspace:GetPartBoundsInBox(boxCFrame, size, overlap)
                 local found = false
-                for _, part in ipairs(workspace:GetPartsInPart(hb, op)) do
-                    local char = part.Parent
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hum and hum.Health > 0 and Players:GetPlayerFromCharacter(char) == LocalPlayer then
-                        found = true; break
-                    end
-                    if LocalCharacter and (part:IsDescendantOf(LocalCharacter) or char == LocalCharacter) then
-                        found = true; break
+                for _, part in ipairs(parts) do
+                    local character = part:FindFirstAncestorOfClass("Model")
+                    if character then
+                        local humanoid = character:FindFirstChildOfClass("Humanoid")
+                        if humanoid and humanoid.Health > 0
+                            and (Players:GetPlayerFromCharacter(character) == LocalPlayer
+                                or character == LocalCharacter) then
+                            found = true
+                            break
+                        end
                     end
                 end
-                if found and not blockedOnce then
+
+                if found then
                     blockedOnce = true
-                    pcall(function()
-                        hb.Color = NS_AB.HitboxHitColor
-                        if sb then sb.Color3 = NS_AB.HitboxHitColor end
-                    end)
+                    if visual then
+                        visual.Color = NS_AB.HitboxHitColor
+                        if outline then outline.Color3 = NS_AB.HitboxHitColor end
+                    end
                     fireBlockNS()
                     break
                 end
                 RunService.Heartbeat:Wait()
             end
+
+            if visual then pcall(function() visual:Destroy() end) end
         end)
     end
 
@@ -6241,11 +6264,13 @@ local JDSpikeAimbot = {}
 do
     local _Enabled = false
     local _ActiveUntil = 0
+    local _CooldownUntil = 0
     local _Target = nil
     local _HeartbeatConn = nil
     local _ButtonConnections = {}
     local _BoundButtons = setmetatable({}, { __mode = "k" })
-    local LOCK_DURATION = 1.65
+    local LOCK_DURATION = 4
+    local COOLDOWN_DURATION = 15
     local PREDICTION = 0.1768521
 
     local function _GetRoot(player)
@@ -6370,7 +6395,13 @@ do
         if _BoundButtons[button] or not _IsCorruptEnergyButton(button) then return end
         _BoundButtons[button] = true
         table.insert(_ButtonConnections, button.Activated:Connect(function()
-            if _Enabled then _StartAiming() end
+            if not _Enabled then return end
+
+            local now = os.clock()
+            if now < _CooldownUntil then return end
+
+            _CooldownUntil = now + COOLDOWN_DURATION
+            _StartAiming()
         end))
     end
 
