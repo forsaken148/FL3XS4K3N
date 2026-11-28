@@ -748,7 +748,78 @@ function KanhaUI:CreateWindow(opts)
     CloseBtn.AutoButtonColor = false; CloseBtn.Parent = TitleBar; round(CloseBtn,6)
     CloseBtn.MouseEnter:Connect(function() tween(CloseBtn,{BackgroundColor3=Theme.Danger,TextColor3=Color3.new(1,1,1)},0.12) end)
     CloseBtn.MouseLeave:Connect(function() tween(CloseBtn,{BackgroundColor3=Theme.Surface2,TextColor3=Theme.TextDim},0.12) end)
-    CloseBtn.MouseButton1Click:Connect(function() Main.Visible = false end)
+    -- Floating reopen button stays on-screen after the main window is closed.
+    -- It supports both mouse and touch dragging, including mobile devices.
+    local OpenBtn = Instance.new("TextButton")
+    OpenBtn.Name = "FlexSakenReopen"
+    OpenBtn.Size = UDim2.fromOffset(54, 54)
+    OpenBtn.Position = UDim2.new(0, 18, 0.62, 0)
+    OpenBtn.BackgroundColor3 = Theme.Surface
+    OpenBtn.BorderSizePixel = 0
+    OpenBtn.Text = "F"
+    OpenBtn.Font = Enum.Font.GothamBlack
+    OpenBtn.TextSize = 22
+    OpenBtn.TextColor3 = Theme.Text
+    OpenBtn.AutoButtonColor = false
+    OpenBtn.Visible = false
+    OpenBtn.Active = true
+    OpenBtn.ZIndex = 100
+    OpenBtn.Parent = ScreenGui
+    round(OpenBtn, 16)
+    stroke(OpenBtn, accent, 2, 0.05)
+
+    local openBtnDragging, openBtnDragMoved = false, false
+    local openBtnInput, openBtnStart, openBtnStartPos
+    local function clampOpenButton(pos)
+        local cam = Workspace.CurrentCamera
+        local vp = cam and cam.ViewportSize or Vector2.new(800, 600)
+        local rawX = pos.X.Scale * vp.X + pos.X.Offset
+        local rawY = pos.Y.Scale * vp.Y + pos.Y.Offset
+        local x = math.clamp(rawX, 4, math.max(4, vp.X - OpenBtn.AbsoluteSize.X - 4))
+        local y = math.clamp(rawY, 4, math.max(4, vp.Y - OpenBtn.AbsoluteSize.Y - 4))
+        return UDim2.fromOffset(x, y)
+    end
+    OpenBtn.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        openBtnInput = input
+        openBtnStart = input.Position
+        openBtnStartPos = OpenBtn.Position
+        openBtnDragging = true
+        openBtnDragMoved = false
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End
+                or input.UserInputState == Enum.UserInputState.Cancel then
+                local wasDrag = openBtnDragMoved
+                openBtnDragging = false
+                openBtnInput = nil
+                if not wasDrag and input.UserInputState == Enum.UserInputState.End then
+                    Main.Visible = true
+                    OpenBtn.Visible = false
+                end
+            end
+        end)
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if not openBtnDragging or not openBtnInput then return end
+        local isTouch = input == openBtnInput
+        local isMouse = openBtnInput.UserInputType == Enum.UserInputType.MouseButton1
+            and input.UserInputType == Enum.UserInputType.MouseMovement
+        if not (isTouch or isMouse) then return end
+        local delta = input.Position - openBtnStart
+        if delta.Magnitude > 6 then openBtnDragMoved = true end
+        if openBtnDragMoved then
+            OpenBtn.Position = clampOpenButton(UDim2.fromOffset(
+                openBtnStartPos.X.Offset + delta.X,
+                openBtnStartPos.Y.Offset + delta.Y
+            ))
+        end
+    end)
+
+    CloseBtn.Activated:Connect(function()
+        Main.Visible = false
+        OpenBtn.Visible = true
+    end)
 
     local dragging, dragStart, startPos
     TitleBar.InputBegan:Connect(function(input)
@@ -779,7 +850,36 @@ function KanhaUI:CreateWindow(opts)
     local Content = Instance.new("Frame"); Content.Size = UDim2.new(1,-132,1,-36); Content.Position = UDim2.new(0,132,0,36)
     Content.BackgroundColor3 = Theme.Background; Content.BorderSizePixel = 0; Content.ClipsDescendants = true; Content.Parent = Main
 
-    local Window = { ScreenGui=ScreenGui, Main=Main, Tabs={}, ActiveTab=nil, _tabButtons={} }
+    -- Fit the window to phone/tablet screens while preserving the desktop layout.
+    local function updateResponsiveLayout()
+        local cam = Workspace.CurrentCamera
+        local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
+        local mobile = UserInputService.TouchEnabled
+        local targetW, targetH, sideW
+        if mobile then
+            targetW = math.max(280, math.min(vp.X - 16, 520))
+            targetH = math.max(320, math.min(vp.Y - 24, math.floor(vp.Y * 0.82)))
+            sideW = math.clamp(math.floor(targetW * 0.27), 88, 112)
+        else
+            targetW = math.min(size.X.Offset, math.max(300, vp.X - 24))
+            targetH = math.min(size.Y.Offset, math.max(280, vp.Y - 24))
+            sideW = 132
+        end
+        Main.Size = UDim2.fromOffset(targetW, targetH)
+        Main.Position = UDim2.new(0.5, -targetW / 2, 0.5, -targetH / 2)
+        Sidebar.Size = UDim2.new(0, sideW, 1, -36)
+        Content.Size = UDim2.new(1, -sideW, 1, -36)
+        Content.Position = UDim2.new(0, sideW, 0, 36)
+        FooterLabel.Size = UDim2.new(1, -12, 0, 28)
+        OpenBtn.Position = clampOpenButton(OpenBtn.Position)
+    end
+    updateResponsiveLayout()
+    local viewportConn
+    if Workspace.CurrentCamera then
+        viewportConn = Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveLayout)
+    end
+
+    local Window = { ScreenGui=ScreenGui, Main=Main, OpenButton=OpenBtn, Tabs={}, ActiveTab=nil, _tabButtons={} }
 
     local function setActiveTab(tabName)
         for name, page in pairs(Window.Tabs) do page.Visible = (name==tabName) end
@@ -997,6 +1097,7 @@ function KanhaUI:CreateWindow(opts)
 
     function Window:Toggle(vis)
         if vis==nil then Main.Visible=not Main.Visible else Main.Visible=not not vis end
+        OpenBtn.Visible = not Main.Visible
     end
 
     UserInputService.InputBegan:Connect(function(input,gp)
