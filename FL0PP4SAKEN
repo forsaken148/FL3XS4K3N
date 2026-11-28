@@ -704,7 +704,7 @@ function KanhaUI:CreateWindow(opts)
     opts = opts or {}
     local title = opts.Title or "Flex Saken"
     local footer = opts.Footer or "v1.1 — Crimson"
-    local size = opts.Size or UDim2.fromOffset(680, 460)
+    local size = opts.Size or UDim2.fromOffset(520, 360)
     local accent = opts.Accent or Theme.Accent
     Theme.Accent = accent; Theme.AccentHover = Color3.new(math.min(1,accent.R*1.15),math.min(1,accent.G*1.15),math.min(1,accent.B*1.15))
     Theme.SliderFill = accent; Theme.ToggleOn = accent
@@ -727,7 +727,7 @@ function KanhaUI:CreateWindow(opts)
     Main.Position = UDim2.new(0.5,-size.X.Offset/2,0.5,-size.Y.Offset/2); Main.Parent = ScreenGui
     round(Main,12); stroke(Main,Theme.Border,1,0.3)
 
-    local TitleBar = Instance.new("Frame"); TitleBar.Size = UDim2.new(1,0,0,42)
+    local TitleBar = Instance.new("Frame"); TitleBar.Size = UDim2.new(1,0,0,36)
     TitleBar.BackgroundColor3 = Theme.Surface; TitleBar.BorderSizePixel = 0; TitleBar.Parent = Main; round(TitleBar,12)
     local TitleCover = Instance.new("Frame"); TitleCover.Size = UDim2.new(1,0,0,14); TitleCover.Position = UDim2.new(0,0,1,-14)
     TitleCover.BackgroundColor3 = Theme.Surface; TitleCover.BorderSizePixel = 0; TitleCover.Parent = TitleBar
@@ -764,7 +764,7 @@ function KanhaUI:CreateWindow(opts)
         end
     end)
 
-    local Sidebar = Instance.new("Frame"); Sidebar.Size = UDim2.new(0,158,1,-42); Sidebar.Position = UDim2.new(0,0,0,42)
+    local Sidebar = Instance.new("Frame"); Sidebar.Size = UDim2.new(0,132,1,-36); Sidebar.Position = UDim2.new(0,0,0,36)
     Sidebar.BackgroundColor3 = Theme.Surface; Sidebar.BorderSizePixel = 0; Sidebar.Parent = Main
     local SideScroll = Instance.new("ScrollingFrame"); SideScroll.Size = UDim2.new(1,0,1,-36)
     SideScroll.BackgroundTransparency = 1; SideScroll.BorderSizePixel = 0; SideScroll.ScrollBarThickness = 3
@@ -776,7 +776,7 @@ function KanhaUI:CreateWindow(opts)
     FooterLabel.TextColor3=Theme.TextDim; FooterLabel.TextXAlignment=Enum.TextXAlignment.Left
     FooterLabel.TextTruncate=Enum.TextTruncate.AtEnd; FooterLabel.Text=footer; FooterLabel.Parent=Sidebar
 
-    local Content = Instance.new("Frame"); Content.Size = UDim2.new(1,-158,1,-42); Content.Position = UDim2.new(0,158,0,42)
+    local Content = Instance.new("Frame"); Content.Size = UDim2.new(1,-132,1,-36); Content.Position = UDim2.new(0,132,0,36)
     Content.BackgroundColor3 = Theme.Background; Content.BorderSizePixel = 0; Content.ClipsDescendants = true; Content.Parent = Main
 
     local Window = { ScreenGui=ScreenGui, Main=Main, Tabs={}, ActiveTab=nil, _tabButtons={} }
@@ -792,8 +792,8 @@ function KanhaUI:CreateWindow(opts)
 
     function Window:CreateTab(tabName)
         tabName = tostring(tabName)
-        local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1,0,0,32)
-        btn.BackgroundColor3=Theme.Surface; btn.BorderSizePixel=0; btn.Font=Enum.Font.GothamMedium; btn.TextSize=12
+        local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1,0,0,28)
+        btn.BackgroundColor3=Theme.Surface; btn.BorderSizePixel=0; btn.Font=Enum.Font.GothamMedium; btn.TextSize=11
         btn.TextColor3=Theme.TextDim; btn.Text=tabName; btn.TextXAlignment=Enum.TextXAlignment.Left
         btn.AutoButtonColor=false; btn.Parent=SideScroll; round(btn,6); pad(btn,12,0,8,0)
         btn.MouseEnter:Connect(function() if Window.ActiveTab~=tabName then tween(btn,{BackgroundColor3=Theme.Surface2},0.1) end end)
@@ -805,7 +805,7 @@ function KanhaUI:CreateWindow(opts)
         page.Size=UDim2.new(1,0,1,0); page.BackgroundTransparency=1; page.BorderSizePixel=0
         page.ScrollBarThickness=4; page.ScrollBarImageColor3=Theme.Border; page.CanvasSize=UDim2.new(0,0,0,0)
         page.AutomaticCanvasSize=Enum.AutomaticSize.Y; page.Visible=false; page.Parent=Content
-        pad(page,14,12,14,14); listLayout(page,Enum.FillDirection.Vertical,10)
+        pad(page,10,8,10,10); listLayout(page,Enum.FillDirection.Vertical,8)
         Window.Tabs[tabName] = page
         if not Window.ActiveTab then setActiveTab(tabName) end
 
@@ -815,7 +815,7 @@ function KanhaUI:CreateWindow(opts)
             sectionName = tostring(sectionName or "General")
             local box = Instance.new("Frame"); box.Size=UDim2.new(1,0,0,0); box.AutomaticSize=Enum.AutomaticSize.Y
             box.BackgroundColor3=Theme.Surface; box.BorderSizePixel=0; box.Parent=page
-            round(box,8); stroke(box,Theme.Border,1,0.5); pad(box,12,10,12,12); listLayout(box,Enum.FillDirection.Vertical,8)
+            round(box,8); stroke(box,Theme.Border,1,0.5); pad(box,10,8,10,10); listLayout(box,Enum.FillDirection.Vertical,6)
             local header = Instance.new("TextLabel"); header.Size=UDim2.new(1,0,0,20); header.BackgroundTransparency=1
             header.Font=Enum.Font.GothamBold; header.TextSize=12; header.TextColor3=accent
             header.TextXAlignment=Enum.TextXAlignment.Left; header.Text=sectionName:upper(); header.Parent=box
@@ -1049,7 +1049,7 @@ do
         local win = Library:CreateWindow({
             Title          = "⚔ Flex Saken",
             Footer         = "v1.1 — by Ethan & Luna  |  RightShift to toggle",
-            Size           = UDim2.fromOffset(720, 480),
+            Size           = UDim2.fromOffset(520, 360),
             Accent         = Color3.fromRGB(220, 40, 60),
             ToggleKeybind  = Enum.KeyCode.RightShift,
         })
