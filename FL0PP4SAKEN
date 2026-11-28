@@ -15090,19 +15090,19 @@ function FlexUI:CreateWindow()
             Icon          = "swords",
             Folder        = "FlexSaken",
             -- Compact layout for 800x600 touch screens.
-            Size          = UDim2.fromOffset(620, 420),
-            MinSize       = Vector2.new(420, 300),
-            MaxSize       = Vector2.new(680, 500),
+            Size          = UDim2.fromOffset(480, 340),
+            MinSize       = Vector2.new(360, 260),
+            MaxSize       = Vector2.new(540, 390),
             Radius        = 8,
             ElementsRadius = 8,
-            Transparent   = true,
+            Transparent   = false,
             NewElements   = false,
             Resizable     = true,
             ScrollBarEnabled = true,
             HideSearchBar = false,
-            SideBarWidth  = 132,
+            SideBarWidth  = 112,
             ToggleKey     = Enum.KeyCode.RightShift,
-            Topbar        = { Height = 36, ButtonsType = "Default" },
+            Topbar        = { Height = 32, ButtonsType = "Default" },
             User          = { Enabled = true, Anonymous = false },
             KeySystem     = {
                 Title   = "Flex Saken",
@@ -15117,6 +15117,10 @@ function FlexUI:CreateWindow()
         flashError("WindUI CreateWindow failed: " .. tostring(Err))
         return nil
     end
+
+    -- Start compact on small touch displays.
+    pcall(function() Real:SetUIScale(0.85) end)
+    pcall(function() Real:SetToTheCenter() end)
 
     pcall(function() WindUI:SetTheme(Saved.UI_Theme or "Neon Grid") end)
 
